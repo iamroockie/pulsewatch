@@ -14,16 +14,26 @@ import (
 	"github.com/iamroockie/plinth"
 	"github.com/iamroockie/plinth/middleware"
 
+	"github.com/iamroockie/pulsewatch/internal/adapter/postgres"
 	"github.com/iamroockie/pulsewatch/internal/config"
 )
 
 func Run(cfg config.Config, log *slog.Logger) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	startupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := postgres.NewPool(startupCtx, cfg.Postgres.DSN())
+	if err != nil {
+		return fmt.Errorf("connect postgres: %w", err)
+	}
+	defer pool.Close()
 
 	svr := &http.Server{
 		Addr:              cfg.HTTP.Addr(),
-		Handler:           router(log),
+		Handler:           router(log, map[string]plinth.CheckFunc{"postgres": pool.Ping}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -40,7 +50,7 @@ func Run(cfg config.Config, log *slog.Logger) error {
 	select {
 	case err := <-svrErr:
 		return fmt.Errorf("serve http: %w", err)
-	case <-ctx.Done():
+	case <-runCtx.Done():
 		stop()
 	}
 
@@ -58,23 +68,18 @@ func Run(cfg config.Config, log *slog.Logger) error {
 	return nil
 }
 
-func router(log *slog.Logger) http.Handler {
+func router(log *slog.Logger, checks map[string]plinth.CheckFunc) http.Handler {
 	mux := http.NewServeMux()
 
-	mux.Handle("GET /healthz", healthz())
+	mux.Handle("GET /healthz", plinth.Healthz())
+	mux.Handle("GET /readyz", plinth.Readyz(2*time.Second, checks))
 
 	mw := middleware.Chain(
 		middleware.RequestID(),
-		middleware.RequestLog(log, "/healthz"),
+		middleware.RequestLog(log, "/healthz", "/readyz"),
 		middleware.ErrorLog(log),
 		middleware.Recover(),
 	)
 
 	return mw(plinth.JSONMux(mux))
-}
-
-func healthz() http.Handler {
-	return plinth.RespondJSON(func(_ *http.Request) (*plinth.Response, error) {
-		return plinth.NewResponse(http.StatusOK, map[string]string{"status": "ok"}), nil
-	})
 }
