@@ -62,6 +62,9 @@ linters:
     rules:
       - path: _test\.go
         linters: [dupl, errcheck, gocognit, gosec, noctx]
+      - path: internal/adapter/httpcheck/
+        linters: [gosec]
+        text: G404
   settings:
     embeddedstructfieldcheck:
       forbid-mutex: true
