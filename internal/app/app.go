@@ -10,12 +10,14 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"uuid"
 
 	"github.com/iamroockie/plinth"
-	"github.com/iamroockie/plinth/middleware"
 
 	"github.com/iamroockie/pulsewatch/internal/adapter/postgres"
 	"github.com/iamroockie/pulsewatch/internal/config"
+	"github.com/iamroockie/pulsewatch/internal/service"
+	"github.com/iamroockie/pulsewatch/internal/transport/rest"
 )
 
 func Run(cfg config.Config, log *slog.Logger) error {
@@ -31,9 +33,13 @@ func Run(cfg config.Config, log *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	nowFn := func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) }
+	monitors := service.NewMonitors(postgres.NewMonitors(pool), nowFn, uuid.NewV7)
+	checks := map[string]plinth.CheckFunc{"postgres": pool.Ping}
+
 	svr := &http.Server{
 		Addr:              cfg.HTTP.Addr(),
-		Handler:           router(log, map[string]plinth.CheckFunc{"postgres": pool.Ping}),
+		Handler:           rest.NewRouter(log, checks, monitors),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -66,20 +72,4 @@ func Run(cfg config.Config, log *slog.Logger) error {
 	log.Info("shutdown completed")
 
 	return nil
-}
-
-func router(log *slog.Logger, checks map[string]plinth.CheckFunc) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.Handle("GET /healthz", plinth.Healthz())
-	mux.Handle("GET /readyz", plinth.Readyz(2*time.Second, checks))
-
-	mw := middleware.Chain(
-		middleware.RequestID(),
-		middleware.RequestLog(log, "/healthz", "/readyz"),
-		middleware.ErrorLog(log),
-		middleware.Recover(),
-	)
-
-	return mw(plinth.JSONMux(mux))
 }

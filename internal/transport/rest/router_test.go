@@ -1,4 +1,4 @@
-package app
+package rest_test
 
 import (
 	"bytes"
@@ -13,14 +13,23 @@ import (
 	"github.com/iamroockie/plinth/plinthtest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
+
+	"github.com/iamroockie/pulsewatch/internal/transport/rest"
 )
+
+func newRouter(tb testing.TB, log *slog.Logger, checkErr error) http.Handler {
+	tb.Helper()
+
+	return rest.NewRouter(log, map[string]plinth.CheckFunc{
+		"postgres": func(context.Context) error { return checkErr },
+	}, NewMockMonitorService(gomock.NewController(tb)))
+}
 
 func testRouter(tb testing.TB, checkErr error) http.Handler {
 	tb.Helper()
 
-	return router(slog.New(slog.DiscardHandler), map[string]plinth.CheckFunc{
-		"postgres": func(context.Context) error { return checkErr },
-	})
+	return newRouter(tb, slog.New(slog.DiscardHandler), checkErr)
 }
 
 func serve(tb testing.TB, h http.Handler, method, target string) *httptest.ResponseRecorder {
@@ -79,9 +88,7 @@ func TestRouterMethodNotAllowed(t *testing.T) {
 func TestRouterProbesStayOutOfRequestLog(t *testing.T) {
 	var buf bytes.Buffer
 
-	h := router(slog.New(slog.NewTextHandler(&buf, nil)), map[string]plinth.CheckFunc{
-		"postgres": func(context.Context) error { return nil },
-	})
+	h := newRouter(t, slog.New(slog.NewTextHandler(&buf, nil)), nil)
 
 	serve(t, h, http.MethodGet, "/healthz")
 	serve(t, h, http.MethodGet, "/readyz")
