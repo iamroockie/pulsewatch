@@ -1,6 +1,20 @@
 package domain
 
-import "time"
+import (
+	"time"
+	"uuid"
+)
+
+type Claim struct {
+	Monitor *Monitor
+	Until   time.Time
+}
+
+type Check struct {
+	MonitorID uuid.UUID
+	CheckedAt time.Time
+	Result    CheckResult
+}
 
 type CheckResult struct {
 	IsUp       bool

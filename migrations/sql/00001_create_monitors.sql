@@ -1,22 +1,23 @@
 -- +goose Up
-create table monitors (
-    id               uuid        primary key,
-    url              text        not null,
-    interval_seconds integer     not null,
-    timeout_ms       integer     not null,
-    max_retries      smallint    not null,
-    is_active        boolean     not null,
-    next_check_at    timestamptz not null,
-    last_check_at    timestamptz,
-    created_at       timestamptz not null,
-    updated_at       timestamptz not null,
-    constraint monitors_url_check check (url ~ '^https?://'),
-    constraint monitors_interval_check check (interval_seconds > 0),
-    constraint monitors_timeout_check check (timeout_ms > 0),
-    constraint monitors_retries_check check (max_retries >= 0)
+CREATE TABLE monitors (
+    id UUID PRIMARY KEY,
+    url TEXT NOT NULL,
+    interval_seconds INTEGER NOT NULL,
+    timeout_ms INTEGER NOT NULL,
+    max_retries SMALLINT NOT NULL,
+    is_active BOOLEAN NOT NULL,
+    next_check_at TIMESTAMPTZ NOT NULL,
+    last_check_at TIMESTAMPTZ,
+    claimed_until TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT monitors_url_check CHECK (url ~ '^https?://'),
+    CONSTRAINT monitors_interval_check CHECK (interval_seconds > 0),
+    CONSTRAINT monitors_timeout_check CHECK (timeout_ms > 0),
+    CONSTRAINT monitors_retries_check CHECK (max_retries >= 0)
 );
 
-create index monitors_due_idx on monitors (next_check_at) where is_active;
+CREATE INDEX monitors_due_idx ON monitors (next_check_at) WHERE is_active;
 
 -- +goose Down
-drop table monitors;
+DROP TABLE monitors;

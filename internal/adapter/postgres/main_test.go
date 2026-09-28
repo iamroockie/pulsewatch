@@ -114,7 +114,7 @@ func newPool(t *testing.T) *pgxpool.Pool {
 	require.NoError(t, err)
 	defer admin.Close(t.Context())
 
-	_, err = admin.Exec(t.Context(), fmt.Sprintf("create database %s template %s",
+	_, err = admin.Exec(t.Context(), fmt.Sprintf("CREATE DATABASE %s TEMPLATE %s",
 		pgx.Identifier{name}.Sanitize(), pgx.Identifier{templateDB}.Sanitize()))
 	require.NoError(t, err)
 

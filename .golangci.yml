@@ -30,6 +30,7 @@ linters:
     - bodyclose
     - canonicalheader
     - copyloopvar
+    - depguard
     - dupl
     - embeddedstructfieldcheck
     - errcheck
@@ -66,6 +67,46 @@ linters:
         linters: [gosec]
         text: G404
   settings:
+    depguard:
+      rules:
+        service:
+          files: ["**/internal/service/**"]
+          deny:
+            - pkg: github.com/iamroockie/pulsewatch/internal/adapter
+              desc: service declares ports, adapters implement them
+            - pkg: github.com/iamroockie/pulsewatch/internal/transport
+              desc: service does not know how it is called
+            - pkg: github.com/iamroockie/pulsewatch/internal/schedule
+              desc: service does not know how it is called
+            - pkg: github.com/iamroockie/pulsewatch/internal/pool
+              desc: service does not know how it is called
+        adapter:
+          files: ["**/internal/adapter/**"]
+          deny:
+            - pkg: github.com/iamroockie/pulsewatch/internal/service
+              desc: adapters implement ports without importing them
+            - pkg: github.com/iamroockie/pulsewatch/internal/transport
+              desc: outgoing side never depends on incoming HTTP
+            - pkg: github.com/iamroockie/pulsewatch/internal/schedule
+              desc: adapters are leaves
+            - pkg: github.com/iamroockie/pulsewatch/internal/pool
+              desc: adapters are leaves
+        transport:
+          files: ["**/internal/transport/**"]
+          deny:
+            - pkg: github.com/iamroockie/pulsewatch/internal/adapter
+              desc: transport goes through service
+            - pkg: github.com/iamroockie/pulsewatch/internal/schedule
+              desc: API and background pipeline meet only in service
+            - pkg: github.com/iamroockie/pulsewatch/internal/pool
+              desc: API and background pipeline meet only in service
+        background:
+          files: ["**/internal/schedule/**", "**/internal/pool/**"]
+          deny:
+            - pkg: github.com/iamroockie/pulsewatch/internal/transport
+              desc: API and background pipeline meet only in service
+            - pkg: github.com/iamroockie/pulsewatch/internal/adapter
+              desc: background pipeline goes through service
     embeddedstructfieldcheck:
       forbid-mutex: true
     gocognit:

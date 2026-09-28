@@ -19,13 +19,13 @@ func main() {
 }
 
 func run() error {
-	cfg, err := config.Load[config.API]()
+	cfg, err := config.Load[config.Worker]()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	log := observability.NewLogger(cfg.AppEnv, cfg.LogLevel).With("app", "api")
+	log := observability.NewLogger(cfg.AppEnv, cfg.LogLevel).With("app", "worker")
 	slog.SetDefault(log)
 
-	return app.RunAPI(cfg, log)
+	return app.RunWorker(cfg, log)
 }

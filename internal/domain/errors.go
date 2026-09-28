@@ -4,6 +4,7 @@ import "errors"
 
 var (
 	ErrMonitorNotFound        = errors.New("monitor not found")
+	ErrClaimLost              = errors.New("claim on monitor is no longer held")
 	ErrInvalidURL             = errors.New("invalid url")
 	ErrUnsupportedSchemeURL   = errors.New("unsupported url scheme")
 	ErrCredentialsInURL       = errors.New("url contains credentials")

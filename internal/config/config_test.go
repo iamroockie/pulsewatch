@@ -2,6 +2,7 @@ package config_test
 
 import (
 	"log/slog"
+	"maps"
 	"testing"
 	"time"
 
@@ -11,19 +12,48 @@ import (
 	"github.com/iamroockie/pulsewatch/internal/config"
 )
 
-func validEnv() map[string]string {
+func baseEnv() map[string]string {
 	return map[string]string{
 		"APP_ENV":          "local",
 		"LOG_LEVEL":        "debug",
 		"SHUTDOWN_TIMEOUT": "20s",
-		"HTTP_HOST":        "localhost",
-		"HTTP_PORT":        "8080",
 		"PG_HOST":          "db",
 		"PG_PORT":          "5432",
 		"PG_NAME":          "pulsewatch",
 		"PG_USER":          "pulse",
 		"PG_PASS":          "secret",
 		"PG_SSL":           "disable",
+	}
+}
+
+func apiEnv() map[string]string {
+	env := baseEnv()
+	env["HTTP_HOST"] = "localhost"
+	env["HTTP_PORT"] = "8080"
+
+	return env
+}
+
+func workerEnv() map[string]string {
+	env := baseEnv()
+	env["WORKER_COUNT"] = "8"
+
+	return env
+}
+
+func wantBase() config.Base {
+	return config.Base{
+		AppEnv:          "local",
+		LogLevel:        slog.LevelDebug,
+		ShutdownTimeout: 20 * time.Second,
+		Postgres: config.PostgresConfig{
+			Host:     "db",
+			Port:     5432,
+			DB:       "pulsewatch",
+			User:     "pulse",
+			Password: "secret",
+			SSL:      "disable",
+		},
 	}
 }
 
@@ -35,85 +65,121 @@ func setEnv(t *testing.T, env map[string]string) {
 	}
 }
 
-func envWith(name, value string) map[string]string {
-	env := validEnv()
+func with(env map[string]string, name, value string) map[string]string {
+	env = maps.Clone(env)
 	env[name] = value
 
 	return env
 }
 
-func TestLoad(t *testing.T) {
-	setEnv(t, validEnv())
+func loadErr[T config.API | config.Worker]() error {
+	_, err := config.Load[T]()
 
-	cfg, err := config.Load()
+	return err
+}
+
+func TestLoadAPI(t *testing.T) {
+	setEnv(t, apiEnv())
+	want := config.API{
+		Base: wantBase(),
+		HTTP: config.HTTPConfig{Host: "localhost", Port: 8080},
+	}
+
+	got, err := config.Load[config.API]()
 
 	require.NoError(t, err)
-	assert.Equal(t, "local", cfg.AppEnv)
-	assert.Equal(t, slog.LevelDebug, cfg.LogLevel)
-	assert.Equal(t, 20*time.Second, cfg.ShutdownTimeout)
-	assert.Equal(t, "localhost", cfg.HTTP.Host)
-	assert.Equal(t, uint16(8080), cfg.HTTP.Port)
-	assert.Equal(t, "db", cfg.Postgres.Host)
-	assert.Equal(t, uint16(5432), cfg.Postgres.Port)
-	assert.Equal(t, "pulsewatch", cfg.Postgres.DB)
-	assert.Equal(t, "pulse", cfg.Postgres.User)
-	assert.Equal(t, "secret", cfg.Postgres.Password)
-	assert.Equal(t, "disable", cfg.Postgres.SSL)
+	assert.Equal(t, want, got)
+}
+
+func TestLoadWorker(t *testing.T) {
+	setEnv(t, workerEnv())
+	want := config.Worker{Base: wantBase(), WorkerCount: 8}
+
+	got, err := config.Load[config.Worker]()
+
+	require.NoError(t, err)
+	assert.Equal(t, want, got)
 }
 
 func TestLoadRejectsEmptyValue(t *testing.T) {
-	for name := range validEnv() {
-		t.Run(name, func(t *testing.T) {
-			setEnv(t, envWith(name, ""))
+	tests := map[string]struct {
+		env  map[string]string
+		load func() error
+	}{
+		"api":    {env: apiEnv(), load: loadErr[config.API]},
+		"worker": {env: workerEnv(), load: loadErr[config.Worker]},
+	}
 
-			_, err := config.Load()
+	for name, test := range tests {
+		for key := range test.env {
+			t.Run(name+"/"+key, func(t *testing.T) {
+				setEnv(t, with(test.env, key, ""))
 
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), name)
-		})
+				err := test.load()
+
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), key)
+			})
+		}
 	}
 }
 
 func TestLoadRejectsMalformedValue(t *testing.T) {
 	tests := map[string]struct {
-		name    string
-		value   string
+		env     map[string]string
+		load    func() error
 		wantErr []string
 	}{
 		"port is not a number": {
-			name: "HTTP_PORT", value: "abc",
+			env:     with(apiEnv(), "HTTP_PORT", "abc"),
+			load:    loadErr[config.API],
 			wantErr: []string{"Port", "uint16", `"abc"`},
 		},
 		"port exceeds uint16": {
-			name: "HTTP_PORT", value: "70000",
+			env:     with(apiEnv(), "HTTP_PORT", "70000"),
+			load:    loadErr[config.API],
 			wantErr: []string{"Port", "out of range", `"70000"`},
 		},
 		"port is negative": {
-			name: "PG_PORT", value: "-1",
+			env:     with(workerEnv(), "PG_PORT", "-1"),
+			load:    loadErr[config.Worker],
 			wantErr: []string{"Port", `"-1"`},
 		},
 		"unknown log level": {
-			name: "LOG_LEVEL", value: "nonsense",
+			env:     with(apiEnv(), "LOG_LEVEL", "nonsense"),
+			load:    loadErr[config.API],
 			wantErr: []string{"LogLevel", `"nonsense"`},
 		},
 		"duration without unit": {
-			name: "SHUTDOWN_TIMEOUT", value: "20",
+			env:     with(workerEnv(), "SHUTDOWN_TIMEOUT", "20"),
+			load:    loadErr[config.Worker],
 			wantErr: []string{"ShutdownTimeout", "missing unit", `"20"`},
 		},
 		"duration is not a number": {
-			name: "SHUTDOWN_TIMEOUT", value: "soon",
+			env:     with(apiEnv(), "SHUTDOWN_TIMEOUT", "soon"),
+			load:    loadErr[config.API],
 			wantErr: []string{"ShutdownTimeout", `"soon"`},
+		},
+		"worker count is not a number": {
+			env:     with(workerEnv(), "WORKER_COUNT", "many"),
+			load:    loadErr[config.Worker],
+			wantErr: []string{"WorkerCount", `"many"`},
+		},
+		"worker count is negative": {
+			env:     with(workerEnv(), "WORKER_COUNT", "-3"),
+			load:    loadErr[config.Worker],
+			wantErr: []string{"WorkerCount", `"-3"`},
 		},
 	}
 
-	for title, tt := range tests {
-		t.Run(title, func(t *testing.T) {
-			setEnv(t, envWith(tt.name, tt.value))
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			setEnv(t, test.env)
 
-			_, err := config.Load()
+			err := test.load()
 
 			require.Error(t, err)
-			for _, want := range tt.wantErr {
+			for _, want := range test.wantErr {
 				assert.Contains(t, err.Error(), want)
 			}
 		})
@@ -157,9 +223,9 @@ func TestHTTPAddr(t *testing.T) {
 		"ipv6":     {cfg: config.HTTPConfig{Host: "::1", Port: 8080}, want: "[::1]:8080"},
 	}
 
-	for title, tt := range tests {
-		t.Run(title, func(t *testing.T) {
-			assert.Equal(t, tt.want, tt.cfg.Addr())
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, test.want, test.cfg.Addr())
 		})
 	}
 }

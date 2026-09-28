@@ -8,13 +8,7 @@ import (
 	"github.com/iamroockie/pulsewatch/internal/domain"
 )
 
-const (
-	codeInvalid               = "invalid"
-	codeOutOfRange            = "out_of_range"
-	codeUnsupportedScheme     = "unsupported_scheme"
-	codeCredentialsNotAllowed = "credentials_not_allowed"
-	codeExceedsInterval       = "exceeds_interval"
-)
+const codeOutOfRange = "out_of_range"
 
 func toAPIError(err error) error {
 	if errors.Is(err, domain.ErrMonitorNotFound) {
@@ -33,17 +27,17 @@ func settingsRules() []plinth.FieldRule {
 		{
 			Err:   domain.ErrInvalidURL,
 			Field: "url",
-			Code:  codeInvalid,
+			Code:  "invalid",
 		},
 		{
 			Err:   domain.ErrUnsupportedSchemeURL,
 			Field: "url",
-			Code:  codeUnsupportedScheme,
+			Code:  "unsupported_scheme",
 		},
 		{
 			Err:   domain.ErrCredentialsInURL,
 			Field: "url",
-			Code:  codeCredentialsNotAllowed,
+			Code:  "credentials_not_allowed",
 		},
 		{
 			Err:    domain.ErrIntervalOutOfRange,
@@ -60,7 +54,7 @@ func settingsRules() []plinth.FieldRule {
 		{
 			Err:   domain.ErrTimeoutExceedsInterval,
 			Field: "timeout_ms",
-			Code:  codeExceedsInterval,
+			Code:  "exceeds_interval",
 		},
 		{
 			Err:    domain.ErrMaxRetriesOutOfRange,

@@ -51,6 +51,27 @@ func statusServer(t *testing.T, statuses ...int) (*httptest.Server, *atomic.Int3
 	return srv, &hits
 }
 
+func rawServer(t *testing.T, statusLine string) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Read(make([]byte, 4096))
+			io.WriteString(conn, "HTTP/1.1 "+statusLine+"\r\nContent-Length: 0\r\n\r\n")
+			conn.Close()
+		}
+	}()
+
+	return "http://" + ln.Addr().String()
+}
+
 func TestCheckerCheck(t *testing.T) {
 	attempts := domaintest.ValidSettings().MaxRetries + 1
 	tests := map[string]struct {
@@ -196,7 +217,43 @@ func TestCheckerCheckRejectsUnknownCertificate(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, got.IsUp)
 	assert.Zero(t, got.StatusCode)
+	assert.Equal(t, int32(1), got.Attempts)
 	assert.Contains(t, got.Error, "certificate")
+}
+
+func TestCheckerCheckUnusualStatus(t *testing.T) {
+	tests := map[string]struct {
+		statusLine string
+		want       domain.CheckResult
+	}{
+		"informational is down": {
+			statusLine: "101 Switching Protocols",
+			want:       domain.CheckResult{StatusCode: 101, Attempts: 1},
+		},
+		"above range": {
+			statusLine: "700 Weird",
+			want:       domain.CheckResult{Attempts: 1, Error: "invalid status code 700"},
+		},
+		"below range": {
+			statusLine: "099 Low",
+			want:       domain.CheckResult{Attempts: 1, Error: "invalid status code 99"},
+		},
+		"zero": {
+			statusLine: "000 Zero",
+			want:       domain.CheckResult{Attempts: 1, Error: "invalid status code 0"},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			url := rawServer(t, test.statusLine)
+
+			got, err := newChecker().Check(t.Context(), settingsFor(url))
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, withoutLatency(got))
+		})
+	}
 }
 
 func TestCheckerCheckCanceledDuringAttempt(t *testing.T) {

@@ -11,13 +11,24 @@ import (
 	"github.com/caarlos0/env/v11"
 )
 
-type Config struct {
+type Base struct {
 	AppEnv          string        `env:"APP_ENV,notEmpty"`
 	LogLevel        slog.Level    `env:"LOG_LEVEL,notEmpty"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT,notEmpty"`
 
-	HTTP     HTTPConfig     `envPrefix:"HTTP_"`
 	Postgres PostgresConfig `envPrefix:"PG_"`
+}
+
+type API struct {
+	Base
+
+	HTTP HTTPConfig `envPrefix:"HTTP_"`
+}
+
+type Worker struct {
+	Base
+
+	WorkerCount uint `env:"WORKER_COUNT,notEmpty"`
 }
 
 type HTTPConfig struct {
@@ -34,10 +45,10 @@ type PostgresConfig struct {
 	SSL      string `env:"SSL,notEmpty"`
 }
 
-func Load() (Config, error) {
-	cfg, err := env.ParseAs[Config]()
+func Load[T API | Worker]() (T, error) {
+	cfg, err := env.ParseAs[T]()
 	if err != nil {
-		return Config{}, fmt.Errorf("parse env: %w", err)
+		return *new(T), fmt.Errorf("parse env: %w", err)
 	}
 
 	return cfg, nil

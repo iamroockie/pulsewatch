@@ -138,7 +138,7 @@ func TestMonitorsUpdateKeepsColumnsItDoesNotOwn(t *testing.T) {
 	stored := createMonitor(t, repo)
 	checkedAt := fixedNow().Add(time.Minute)
 	_, err := pool.Exec(t.Context(),
-		"update monitors set last_check_at = $2 where id = $1", stored.ID, checkedAt)
+		"UPDATE monitors SET last_check_at = $2 WHERE id = $1", stored.ID, checkedAt)
 	require.NoError(t, err)
 	want := *stored
 	want.LastCheckAt = &checkedAt
@@ -232,9 +232,10 @@ func TestMonitorsDeleteRemovesChecks(t *testing.T) {
 	pool := newPool(t)
 	repo := postgres.NewMonitors(pool)
 	stored := createMonitor(t, repo)
-	_, err := pool.Exec(t.Context(), `insert into checks
-		(monitor_id, checked_at, is_up, status_code, latency_ms, attempts)
-		values ($1, $2, true, 200, 42, 1)`, stored.ID, fixedNow())
+	query := `
+		INSERT INTO checks (monitor_id, checked_at, is_up, status_code, latency_ms, attempts)
+		VALUES ($1, $2, TRUE, 200, 42, 1)`
+	_, err := pool.Exec(t.Context(), query, stored.ID, fixedNow())
 	require.NoError(t, err)
 
 	err = repo.Delete(t.Context(), stored.ID)
@@ -242,6 +243,6 @@ func TestMonitorsDeleteRemovesChecks(t *testing.T) {
 	require.NoError(t, err)
 	var checks int
 	require.NoError(t, pool.QueryRow(t.Context(),
-		"select count(*) from checks where monitor_id = $1", stored.ID).Scan(&checks))
+		"SELECT count(*) FROM checks WHERE monitor_id = $1", stored.ID).Scan(&checks))
 	assert.Zero(t, checks)
 }

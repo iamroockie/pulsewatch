@@ -11,13 +11,13 @@ import (
 
 func NewRouter(
 	log *slog.Logger,
-	checks map[string]plinth.CheckFunc,
+	probes map[string]plinth.CheckFunc,
 	monitors MonitorService,
 ) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.Handle("GET /healthz", plinth.Healthz())
-	mux.Handle("GET /readyz", plinth.Readyz(2*time.Second, checks))
+	mux.Handle("GET /readyz", plinth.Readyz(2*time.Second, probes))
 
 	monitor := &monitorHandler{svc: monitors}
 	mux.Handle("POST /monitors", plinth.RespondJSON(monitor.create))

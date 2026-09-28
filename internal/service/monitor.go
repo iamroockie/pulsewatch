@@ -1,7 +1,5 @@
 package service
 
-//go:generate mockgen -source=monitor.go -destination=mock_repository_test.go -package=service_test
-
 import (
 	"context"
 	"fmt"
@@ -10,18 +8,6 @@ import (
 
 	"github.com/iamroockie/pulsewatch/internal/domain"
 )
-
-type MonitorRepository interface {
-	Create(ctx context.Context, m *domain.Monitor) error
-	Get(ctx context.Context, id uuid.UUID) (*domain.Monitor, error)
-	List(ctx context.Context, after uuid.UUID, limit int) ([]*domain.Monitor, error)
-	Delete(ctx context.Context, id uuid.UUID) error
-	Update(
-		ctx context.Context,
-		id uuid.UUID,
-		fn func(*domain.Monitor) error,
-	) (*domain.Monitor, error)
-}
 
 type MonitorPage struct {
 	Items     []*domain.Monitor

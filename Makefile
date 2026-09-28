@@ -20,9 +20,13 @@ export PATH := $(PATH):$(CURDIR)/$(BIN_DIR)
 prepare:
 	@if [ ! -e .env ]; then cp .env.example .env; fi
 
-.PHONY: run
-run:
+.PHONY: run-api
+run-api:
 	@go run ./cmd/api
+
+.PHONY: run-worker
+run-worker:
+	@go run ./cmd/worker
 
 .PHONY: test
 test:

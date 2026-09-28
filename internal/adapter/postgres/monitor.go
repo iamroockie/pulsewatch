@@ -13,34 +13,8 @@ import (
 	"github.com/iamroockie/pulsewatch/internal/domain"
 )
 
-const (
-	monitorColumns = `id, url, interval_seconds, timeout_ms, max_retries, is_active,
-		next_check_at, last_check_at, created_at, updated_at`
-
-	selectMonitorSQL = `select ` + monitorColumns + ` from monitors where id = $1`
-
-	lockMonitorSQL = selectMonitorSQL + ` for update`
-
-	listMonitorsSQL = `select ` + monitorColumns + ` from monitors
-		where id > $1 order by id limit $2`
-
-	insertMonitorSQL = `insert into monitors (` + monitorColumns + `)
-		values (@id, @url, @interval_seconds, @timeout_ms, @max_retries, @is_active,
-			@next_check_at, @last_check_at, @created_at, @updated_at)`
-
-	updateMonitorSQL = `update monitors set
-			url = @url,
-			interval_seconds = @interval_seconds,
-			timeout_ms = @timeout_ms,
-			max_retries = @max_retries,
-			is_active = @is_active,
-			next_check_at = @next_check_at,
-			updated_at = @updated_at
-		where id = @id
-		returning ` + monitorColumns
-
-	deleteMonitorSQL = `delete from monitors where id = $1`
-)
+const monitorColumns = `id, url, interval_seconds, timeout_ms, max_retries, is_active,
+	next_check_at, last_check_at, created_at, updated_at`
 
 type Monitors struct {
 	pool *pgxpool.Pool
@@ -51,7 +25,15 @@ func NewMonitors(pool *pgxpool.Pool) *Monitors {
 }
 
 func (r *Monitors) Create(ctx context.Context, m *domain.Monitor) error {
-	_, err := r.pool.Exec(ctx, insertMonitorSQL, pgx.StrictStructArgs(rowFromDomain(m)))
+	query := `
+		INSERT INTO monitors (` + monitorColumns + `)
+		VALUES (
+			@id, @url, @interval_seconds, @timeout_ms, @max_retries, @is_active,
+			@next_check_at, @last_check_at, @created_at, @updated_at
+		)
+	`
+
+	_, err := r.pool.Exec(ctx, query, pgx.StrictStructArgs(rowFromDomain(m)))
 	if err != nil {
 		return fmt.Errorf("insert monitor: %w", err)
 	}
@@ -60,13 +42,27 @@ func (r *Monitors) Create(ctx context.Context, m *domain.Monitor) error {
 }
 
 func (r *Monitors) Get(ctx context.Context, id uuid.UUID) (*domain.Monitor, error) {
-	return queryMonitor(ctx, r.pool, selectMonitorSQL, id)
+	query := `
+		SELECT ` + monitorColumns + `
+		FROM monitors
+		WHERE id = $1
+	`
+
+	return queryMonitor(ctx, r.pool, query, id)
 }
 
 func (r *Monitors) List(
 	ctx context.Context, after uuid.UUID, limit int,
 ) ([]*domain.Monitor, error) {
-	rows, err := r.pool.Query(ctx, listMonitorsSQL, after, limit)
+	query := `
+		SELECT ` + monitorColumns + `
+		FROM monitors
+		WHERE id > $1
+		ORDER BY id
+		LIMIT $2
+	`
+
+	rows, err := r.pool.Query(ctx, query, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("select monitors: %w", err)
 	}
@@ -82,10 +78,28 @@ func (r *Monitors) List(
 func (r *Monitors) Update(
 	ctx context.Context, id uuid.UUID, fn func(*domain.Monitor) error,
 ) (*domain.Monitor, error) {
+	lockQuery := `
+		SELECT ` + monitorColumns + `
+		FROM monitors
+		WHERE id = $1
+		FOR UPDATE
+	`
+	updateQuery := `
+		UPDATE monitors
+		SET url = @url,
+			interval_seconds = @interval_seconds,
+			timeout_ms = @timeout_ms,
+			max_retries = @max_retries,
+			is_active = @is_active,
+			next_check_at = @next_check_at,
+			updated_at = @updated_at
+		WHERE id = @id
+		RETURNING ` + monitorColumns
+
 	var updated *domain.Monitor
 
 	err := pgx.BeginFunc(ctx, r.pool, func(tx pgx.Tx) error {
-		m, err := queryMonitor(ctx, tx, lockMonitorSQL, id)
+		m, err := queryMonitor(ctx, tx, lockQuery, id)
 		if err != nil {
 			return err
 		}
@@ -94,7 +108,7 @@ func (r *Monitors) Update(
 			return err
 		}
 
-		updated, err = queryMonitor(ctx, tx, updateMonitorSQL, pgx.StructArgs(rowFromDomain(m)))
+		updated, err = queryMonitor(ctx, tx, updateQuery, pgx.StructArgs(rowFromDomain(m)))
 
 		return err
 	})
@@ -106,7 +120,9 @@ func (r *Monitors) Update(
 }
 
 func (r *Monitors) Delete(ctx context.Context, id uuid.UUID) error {
-	tag, err := r.pool.Exec(ctx, deleteMonitorSQL, id)
+	query := `DELETE FROM monitors WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete monitor: %w", err)
 	}

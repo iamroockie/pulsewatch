@@ -2,7 +2,9 @@ package httpcheck
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -57,17 +59,32 @@ func (c *Checker) attempt(ctx context.Context, s domain.CheckSettings) (domain.C
 	resp, err := c.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
-		return domain.CheckResult{Latency: latency, Error: describe(ctx, err)}, true
+		result := domain.CheckResult{Latency: latency, Error: describe(ctx, err)}
+		return result, !isCertificateError(err)
 	}
 	defer resp.Body.Close()
 
+	code := resp.StatusCode
+	if code < http.StatusContinue || code > 599 {
+		result := domain.CheckResult{
+			Latency: latency,
+			Error:   fmt.Sprintf("invalid status code %d", code),
+		}
+		return result, false
+	}
+
 	result := domain.CheckResult{
-		IsUp:       resp.StatusCode < http.StatusBadRequest,
-		StatusCode: resp.StatusCode,
+		IsUp:       code >= http.StatusOK && code < http.StatusBadRequest,
+		StatusCode: code,
 		Latency:    latency,
 	}
 
-	return result, isRetryable(resp.StatusCode)
+	return result, isRetryable(code)
+}
+
+func isCertificateError(err error) bool {
+	_, ok := errors.AsType[*tls.CertificateVerificationError](err)
+	return ok
 }
 
 func (c *Checker) wait(ctx context.Context, attempt int32) error {
@@ -95,6 +112,5 @@ func describe(ctx context.Context, err error) string {
 	if urlErr, ok := errors.AsType[*url.Error](err); ok {
 		return urlErr.Err.Error()
 	}
-
 	return err.Error()
 }
