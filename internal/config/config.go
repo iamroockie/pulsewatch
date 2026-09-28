@@ -29,6 +29,8 @@ type Worker struct {
 	Base
 
 	WorkerCount uint `env:"WORKER_COUNT,notEmpty"`
+
+	Redis RedisConfig `envPrefix:"REDIS_"`
 }
 
 type HTTPConfig struct {
@@ -43,6 +45,12 @@ type PostgresConfig struct {
 	User     string `env:"USER,notEmpty"`
 	Password string `env:"PASS,notEmpty"`
 	SSL      string `env:"SSL,notEmpty"`
+}
+
+type RedisConfig struct {
+	Host     string `env:"HOST,notEmpty"`
+	Port     uint16 `env:"PORT,notEmpty"`
+	Password string `env:"PASS,notEmpty"`
 }
 
 func Load[T API | Worker]() (T, error) {
@@ -69,5 +77,9 @@ func (c PostgresConfig) DSN() string {
 }
 
 func (c HTTPConfig) Addr() string {
+	return net.JoinHostPort(c.Host, strconv.Itoa(int(c.Port)))
+}
+
+func (c RedisConfig) Addr() string {
 	return net.JoinHostPort(c.Host, strconv.Itoa(int(c.Port)))
 }

@@ -19,11 +19,16 @@ type CheckRepository interface {
 		limit int,
 	) ([]domain.Claim, error)
 	Record(ctx context.Context, check *domain.Check, until time.Time) error
-	Release(ctx context.Context, id uuid.UUID, until, now time.Time) error
+	Release(ctx context.Context, id uuid.UUID, until, retryAt time.Time) error
 }
 
 type Checker interface {
 	Check(ctx context.Context, s domain.CheckSettings) (domain.CheckResult, error)
+}
+
+type HostLimiter interface {
+	Acquire(ctx context.Context, c domain.Claim, now time.Time) (bool, error)
+	Release(ctx context.Context, c domain.Claim) error
 }
 
 type MonitorRepository interface {

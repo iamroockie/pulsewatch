@@ -37,6 +37,9 @@ func apiEnv() map[string]string {
 func workerEnv() map[string]string {
 	env := baseEnv()
 	env["WORKER_COUNT"] = "8"
+	env["REDIS_HOST"] = "cache"
+	env["REDIS_PORT"] = "6379"
+	env["REDIS_PASS"] = "hidden"
 
 	return env
 }
@@ -93,7 +96,11 @@ func TestLoadAPI(t *testing.T) {
 
 func TestLoadWorker(t *testing.T) {
 	setEnv(t, workerEnv())
-	want := config.Worker{Base: wantBase(), WorkerCount: 8}
+	want := config.Worker{
+		Base:        wantBase(),
+		WorkerCount: 8,
+		Redis:       config.RedisConfig{Host: "cache", Port: 6379, Password: "hidden"},
+	}
 
 	got, err := config.Load[config.Worker]()
 
@@ -165,6 +172,11 @@ func TestLoadRejectsMalformedValue(t *testing.T) {
 			load:    loadErr[config.Worker],
 			wantErr: []string{"WorkerCount", `"many"`},
 		},
+		"redis port exceeds uint16": {
+			env:     with(workerEnv(), "REDIS_PORT", "70000"),
+			load:    loadErr[config.Worker],
+			wantErr: []string{"Port", "out of range", `"70000"`},
+		},
 		"worker count is negative": {
 			env:     with(workerEnv(), "WORKER_COUNT", "-3"),
 			load:    loadErr[config.Worker],
@@ -228,4 +240,10 @@ func TestHTTPAddr(t *testing.T) {
 			assert.Equal(t, test.want, test.cfg.Addr())
 		})
 	}
+}
+
+func TestRedisAddr(t *testing.T) {
+	cfg := config.RedisConfig{Host: "::1", Port: 6379, Password: "hidden"}
+
+	assert.Equal(t, "[::1]:6379", cfg.Addr())
 }

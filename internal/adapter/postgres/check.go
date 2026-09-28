@@ -103,17 +103,17 @@ func (r *Checks) Record(ctx context.Context, check *domain.Check, until time.Tim
 	return nil
 }
 
-func (r *Checks) Release(ctx context.Context, id uuid.UUID, until, now time.Time) error {
+func (r *Checks) Release(ctx context.Context, id uuid.UUID, until, retryAt time.Time) error {
 	query := `
 		UPDATE monitors
-		SET claimed_until = NULL, next_check_at = LEAST(next_check_at, @now)
+		SET claimed_until = NULL, next_check_at = LEAST(next_check_at, @retry_at)
 		WHERE id = @id AND claimed_until = @claimed_until
 	`
 
 	_, err := r.pool.Exec(ctx, query, pgx.NamedArgs{
 		"id":            id,
 		"claimed_until": until,
-		"now":           now,
+		"retry_at":      retryAt,
 	})
 	if err != nil {
 		return fmt.Errorf("release monitor: %w", err)

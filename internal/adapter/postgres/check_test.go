@@ -347,19 +347,19 @@ func TestChecksRecordMonitorNotFound(t *testing.T) {
 }
 
 func TestChecksRelease(t *testing.T) {
-	now := fixedNow().Add(time.Hour)
-	until := now.Add(time.Minute)
+	retryAt := fixedNow().Add(time.Hour)
+	until := retryAt.Add(time.Minute)
 	tests := map[string]struct {
 		nextCheckAt time.Time
 		want        time.Time
 	}{
-		"claimed schedule is pulled back to now": {
-			nextCheckAt: now.Add(time.Minute),
-			want:        now,
+		"claimed schedule is pulled back to retry time": {
+			nextCheckAt: retryAt.Add(time.Minute),
+			want:        retryAt,
 		},
 		"earlier schedule is kept": {
-			nextCheckAt: now.Add(-time.Minute),
-			want:        now.Add(-time.Minute),
+			nextCheckAt: retryAt.Add(-time.Minute),
+			want:        retryAt.Add(-time.Minute),
 		},
 	}
 
@@ -373,7 +373,7 @@ func TestChecksRelease(t *testing.T) {
 			want := *stored
 			want.NextCheckAt = test.want
 
-			err := postgres.NewChecks(pool).Release(t.Context(), stored.ID, until, now)
+			err := postgres.NewChecks(pool).Release(t.Context(), stored.ID, until, retryAt)
 
 			require.NoError(t, err)
 			assert.Equal(t, &want, getMonitor(t, postgres.NewMonitors(pool), stored.ID))

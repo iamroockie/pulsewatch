@@ -11,6 +11,7 @@ import (
 
 	"github.com/iamroockie/pulsewatch/internal/adapter/httpcheck"
 	"github.com/iamroockie/pulsewatch/internal/adapter/postgres"
+	"github.com/iamroockie/pulsewatch/internal/adapter/redis"
 	"github.com/iamroockie/pulsewatch/internal/config"
 	"github.com/iamroockie/pulsewatch/internal/pool"
 	"github.com/iamroockie/pulsewatch/internal/schedule"
@@ -27,9 +28,16 @@ func RunWorker(cfg config.Worker, log *slog.Logger) error {
 	}
 	defer db.Close()
 
+	rdb, err := connectRedis(cfg.Redis.Addr(), cfg.Redis.Password)
+	if err != nil {
+		return err
+	}
+	defer rdb.Close()
+
 	retryBackoff := httpcheck.Backoff{Base: 500 * time.Millisecond, Max: 5 * time.Second}
 	checker := httpcheck.NewChecker(retryBackoff)
-	checks := service.NewChecks(postgres.NewChecks(db), checker, now, retryBackoff.Max)
+	hosts := redis.NewHostLimiter(rdb, 5)
+	checks := service.NewChecks(postgres.NewChecks(db), checker, hosts, now, retryBackoff.Max, log)
 	workers := pool.NewPool(cfg.WorkerCount, checks, log)
 
 	log.Info("scheduler running", "workers", cfg.WorkerCount)

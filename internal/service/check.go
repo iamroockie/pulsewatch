@@ -4,27 +4,42 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/iamroockie/pulsewatch/internal/domain"
 )
 
-const persistTimeout = 5 * time.Second
+const (
+	persistTimeout = 5 * time.Second
+	slotTimeout    = time.Second
+)
 
 type Checks struct {
 	repo       CheckRepository
 	checker    Checker
+	hosts      HostLimiter
 	now        func() time.Time
 	retryDelay time.Duration
+	log        *slog.Logger
 }
 
 func NewChecks(
 	repo CheckRepository,
 	checker Checker,
+	hosts HostLimiter,
 	now func() time.Time,
 	retryDelay time.Duration,
+	log *slog.Logger,
 ) *Checks {
-	return &Checks{repo: repo, checker: checker, now: now, retryDelay: retryDelay}
+	return &Checks{
+		repo:       repo,
+		checker:    checker,
+		hosts:      hosts,
+		now:        now,
+		retryDelay: retryDelay,
+		log:        log,
+	}
 }
 
 func (s *Checks) ClaimDue(ctx context.Context, limit int) ([]domain.Claim, error) {
@@ -41,6 +56,11 @@ func (s *Checks) ClaimDue(ctx context.Context, limit int) ([]domain.Claim, error
 func (s *Checks) Run(ctx context.Context, c domain.Claim) error {
 	id := c.Monitor.ID
 
+	if !s.acquireSlot(ctx, c) {
+		return s.postpone(ctx, c)
+	}
+	defer s.releaseSlot(ctx, c)
+
 	checkCtx, cancelCheck := context.WithDeadline(ctx, c.Until.Add(-persistTimeout))
 	defer cancelCheck()
 
@@ -54,7 +74,6 @@ func (s *Checks) Run(ctx context.Context, c domain.Claim) error {
 		if releaseErr := s.repo.Release(persistCtx, id, c.Until, s.now()); releaseErr != nil {
 			return fmt.Errorf("release interrupted check of monitor %s: %w", id, releaseErr)
 		}
-
 		return fmt.Errorf("check monitor %s: %w", id, err)
 	}
 
@@ -67,4 +86,41 @@ func (s *Checks) Run(ctx context.Context, c domain.Claim) error {
 	releaseErr := s.repo.Release(persistCtx, id, c.Until, s.now())
 
 	return fmt.Errorf("record check of monitor %s: %w", id, errors.Join(err, releaseErr))
+}
+
+func (s *Checks) acquireSlot(ctx context.Context, c domain.Claim) bool {
+	ctx, cancel := context.WithTimeout(ctx, slotTimeout)
+	defer cancel()
+
+	acquired, err := s.hosts.Acquire(ctx, c, s.now())
+	if err != nil {
+		s.log.Warn("check without host limit", "monitor_id", c.Monitor.ID, "error", err)
+		return true
+	}
+
+	return acquired
+}
+
+func (s *Checks) releaseSlot(ctx context.Context, c domain.Claim) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), slotTimeout)
+	defer cancel()
+
+	if err := s.hosts.Release(ctx, c); err != nil {
+		s.log.Warn("release host slot", "monitor_id", c.Monitor.ID, "error", err)
+	}
+}
+
+func (s *Checks) postpone(ctx context.Context, c domain.Claim) error {
+	id := c.Monitor.ID
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), persistTimeout)
+	defer cancel()
+
+	if err := s.repo.Release(ctx, id, c.Until, s.now().Add(time.Second)); err != nil {
+		return fmt.Errorf("postpone check of monitor %s: %w", id, err)
+	}
+
+	s.log.Debug("check postponed, host is busy", "monitor_id", id)
+
+	return nil
 }

@@ -1,8 +1,10 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -17,14 +19,44 @@ import (
 
 const retryDelay = 5 * time.Second
 
-func newChecks(t *testing.T) (*service.Checks, *MockCheckRepository, *MockChecker) {
+func discardLog() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
+
+func levelAndMessageLog(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.LevelKey || a.Key == slog.MessageKey {
+				return a
+			}
+
+			return slog.Attr{}
+		},
+	}))
+}
+
+func newChecks(
+	t *testing.T,
+) (*service.Checks, *MockCheckRepository, *MockChecker, *MockHostLimiter) {
+	t.Helper()
+
+	return newChecksWith(t, fixedNow, discardLog())
+}
+
+func newChecksWith(
+	t *testing.T,
+	clock func() time.Time,
+	log *slog.Logger,
+) (*service.Checks, *MockCheckRepository, *MockChecker, *MockHostLimiter) {
 	t.Helper()
 
 	ctrl := gomock.NewController(t)
 	repo := NewMockCheckRepository(ctrl)
 	checker := NewMockChecker(ctrl)
+	hosts := NewMockHostLimiter(ctrl)
 
-	return service.NewChecks(repo, checker, fixedNow, retryDelay), repo, checker
+	return service.NewChecks(repo, checker, hosts, clock, retryDelay, log), repo, checker, hosts
 }
 
 func newClaim(t *testing.T) domain.Claim {
@@ -36,6 +68,14 @@ func newClaim(t *testing.T) domain.Claim {
 	}
 }
 
+func boundedContext() gomock.Matcher {
+	return gomock.Cond(func(ctx context.Context) bool {
+		_, hasDeadline := ctx.Deadline()
+
+		return hasDeadline
+	})
+}
+
 func livePersistContext() gomock.Matcher {
 	return gomock.Cond(func(ctx context.Context) bool {
 		_, hasDeadline := ctx.Deadline()
@@ -44,8 +84,13 @@ func livePersistContext() gomock.Matcher {
 	})
 }
 
+func grantSlot(hosts *MockHostLimiter, c domain.Claim) {
+	hosts.EXPECT().Acquire(boundedContext(), c, fixedNow()).Return(true, nil)
+	hosts.EXPECT().Release(livePersistContext(), c).Return(nil)
+}
+
 func TestChecksClaimDue(t *testing.T) {
-	svc, repo, _ := newChecks(t)
+	svc, repo, _, _ := newChecks(t)
 	want := []domain.Claim{newClaim(t)}
 	repo.EXPECT().
 		ClaimDue(gomock.Any(), fixedNow(), retryDelay, 10*time.Second, 3).
@@ -58,7 +103,7 @@ func TestChecksClaimDue(t *testing.T) {
 }
 
 func TestChecksClaimDueRepositoryError(t *testing.T) {
-	svc, repo, _ := newChecks(t)
+	svc, repo, _, _ := newChecks(t)
 	errStorage := errors.New("storage is down")
 	repo.EXPECT().
 		ClaimDue(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).
@@ -80,8 +125,9 @@ func TestChecksRun(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			svc, repo, checker := newChecks(t)
+			svc, repo, checker, hosts := newChecks(t)
 			c := newClaim(t)
+			grantSlot(hosts, c)
 			result := domain.CheckResult{IsUp: true, StatusCode: 200, Attempts: 1}
 			check := &domain.Check{MonitorID: c.Monitor.ID, CheckedAt: fixedNow(), Result: result}
 			checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).Return(result, nil)
@@ -95,8 +141,9 @@ func TestChecksRun(t *testing.T) {
 }
 
 func TestChecksRunLimitsCheckToClaim(t *testing.T) {
-	svc, repo, checker := newChecks(t)
+	svc, repo, checker, hosts := newChecks(t)
 	c := newClaim(t)
+	grantSlot(hosts, c)
 	var deadline time.Time
 	checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).DoAndReturn(
 		func(ctx context.Context, _ domain.CheckSettings) (domain.CheckResult, error) {
@@ -114,35 +161,42 @@ func TestChecksRunLimitsCheckToClaim(t *testing.T) {
 }
 
 func TestChecksRunReadsClockBeforeCheck(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	repo := NewMockCheckRepository(ctrl)
-	checker := NewMockChecker(ctrl)
-	clockReads := 0
+	reads := 0
 	clock := func() time.Time {
-		clockReads++
+		reads++
 
-		return fixedNow()
+		return fixedNow().Add(time.Duration(reads) * time.Second)
 	}
-	svc := service.NewChecks(repo, checker, clock, retryDelay)
+	svc, repo, checker, hosts := newChecksWith(t, clock, discardLog())
 	c := newClaim(t)
+	var want, got time.Time
+	hosts.EXPECT().Acquire(gomock.Any(), c, gomock.Any()).Return(true, nil)
+	hosts.EXPECT().Release(gomock.Any(), c).Return(nil)
 	checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).DoAndReturn(
 		func(context.Context, domain.CheckSettings) (domain.CheckResult, error) {
-			assert.Equal(t, 1, clockReads)
+			want = fixedNow().Add(time.Duration(reads) * time.Second)
 
 			return domain.CheckResult{Attempts: 1}, nil
 		},
 	)
-	repo.EXPECT().Record(gomock.Any(), gomock.Any(), c.Until).Return(nil)
+	repo.EXPECT().Record(gomock.Any(), gomock.Any(), c.Until).DoAndReturn(
+		func(_ context.Context, check *domain.Check, _ time.Time) error {
+			got = check.CheckedAt
+
+			return nil
+		},
+	)
 
 	err := svc.Run(t.Context(), c)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, clockReads)
+	assert.Equal(t, want, got)
 }
 
 func TestChecksRunRecordsResultAfterCancellation(t *testing.T) {
-	svc, repo, checker := newChecks(t)
+	svc, repo, checker, hosts := newChecks(t)
 	c := newClaim(t)
+	grantSlot(hosts, c)
 	ctx, cancel := context.WithCancel(t.Context())
 	result := domain.CheckResult{IsUp: true, StatusCode: 200, Attempts: 1}
 	check := &domain.Check{MonitorID: c.Monitor.ID, CheckedAt: fixedNow(), Result: result}
@@ -161,8 +215,9 @@ func TestChecksRunRecordsResultAfterCancellation(t *testing.T) {
 }
 
 func TestChecksRunReleasesClaimWhenRecordFails(t *testing.T) {
-	svc, repo, checker := newChecks(t)
+	svc, repo, checker, hosts := newChecks(t)
 	c := newClaim(t)
+	grantSlot(hosts, c)
 	errStorage := errors.New("storage is down")
 	checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).Return(domain.CheckResult{}, nil)
 	repo.EXPECT().Record(gomock.Any(), gomock.Any(), c.Until).Return(errStorage)
@@ -174,8 +229,9 @@ func TestChecksRunReleasesClaimWhenRecordFails(t *testing.T) {
 }
 
 func TestChecksRunReleasesInterruptedCheck(t *testing.T) {
-	svc, repo, checker := newChecks(t)
+	svc, repo, checker, hosts := newChecks(t)
 	c := newClaim(t)
+	grantSlot(hosts, c)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	checker.EXPECT().
@@ -189,8 +245,9 @@ func TestChecksRunReleasesInterruptedCheck(t *testing.T) {
 }
 
 func TestChecksRunReportsFailedRelease(t *testing.T) {
-	svc, repo, checker := newChecks(t)
+	svc, repo, checker, hosts := newChecks(t)
 	c := newClaim(t)
+	grantSlot(hosts, c)
 	errStorage := errors.New("storage is down")
 	checker.EXPECT().
 		Check(gomock.Any(), c.Monitor.Settings).
@@ -201,4 +258,74 @@ func TestChecksRunReportsFailedRelease(t *testing.T) {
 
 	require.ErrorIs(t, err, errStorage)
 	assert.NotErrorIs(t, err, context.Canceled)
+}
+
+func TestChecksRunPostponesCheckOnBusyHost(t *testing.T) {
+	var buf bytes.Buffer
+	svc, repo, _, hosts := newChecksWith(t, fixedNow, levelAndMessageLog(&buf))
+	c := newClaim(t)
+	retryAt := fixedNow().Add(time.Second)
+	hosts.EXPECT().Acquire(boundedContext(), c, fixedNow()).Return(false, nil)
+	repo.EXPECT().Release(livePersistContext(), c.Monitor.ID, c.Until, retryAt).Return(nil)
+
+	err := svc.Run(t.Context(), c)
+
+	require.NoError(t, err)
+	assert.Equal(t, "level=DEBUG msg=\"check postponed, host is busy\"\n", buf.String())
+}
+
+func TestChecksRunPostponesCheckAfterCancellation(t *testing.T) {
+	svc, repo, _, hosts := newChecks(t)
+	c := newClaim(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	hosts.EXPECT().Acquire(gomock.Any(), c, gomock.Any()).Return(false, nil)
+	repo.EXPECT().Release(livePersistContext(), c.Monitor.ID, c.Until, gomock.Any()).Return(nil)
+
+	err := svc.Run(ctx, c)
+
+	assert.NoError(t, err)
+}
+
+func TestChecksRunReportsFailedPostpone(t *testing.T) {
+	svc, repo, _, hosts := newChecks(t)
+	c := newClaim(t)
+	errStorage := errors.New("storage is down")
+	hosts.EXPECT().Acquire(gomock.Any(), c, gomock.Any()).Return(false, nil)
+	repo.EXPECT().Release(gomock.Any(), c.Monitor.ID, c.Until, gomock.Any()).Return(errStorage)
+
+	err := svc.Run(t.Context(), c)
+
+	assert.ErrorIs(t, err, errStorage)
+}
+
+func TestChecksRunChecksWithoutLimitWhenLimiterFails(t *testing.T) {
+	var buf bytes.Buffer
+	svc, repo, checker, hosts := newChecksWith(t, fixedNow, levelAndMessageLog(&buf))
+	c := newClaim(t)
+	errLimiter := errors.New("limiter is down")
+	hosts.EXPECT().Acquire(gomock.Any(), c, gomock.Any()).Return(false, errLimiter)
+	hosts.EXPECT().Release(livePersistContext(), c).Return(nil)
+	checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).Return(domain.CheckResult{}, nil)
+	repo.EXPECT().Record(gomock.Any(), gomock.Any(), c.Until).Return(nil)
+
+	err := svc.Run(t.Context(), c)
+
+	require.NoError(t, err)
+	assert.Equal(t, "level=WARN msg=\"check without host limit\"\n", buf.String())
+}
+
+func TestChecksRunRecordsResultWhenSlotReleaseFails(t *testing.T) {
+	var buf bytes.Buffer
+	svc, repo, checker, hosts := newChecksWith(t, fixedNow, levelAndMessageLog(&buf))
+	c := newClaim(t)
+	hosts.EXPECT().Acquire(gomock.Any(), c, gomock.Any()).Return(true, nil)
+	hosts.EXPECT().Release(gomock.Any(), c).Return(errors.New("limiter is down"))
+	checker.EXPECT().Check(gomock.Any(), c.Monitor.Settings).Return(domain.CheckResult{}, nil)
+	repo.EXPECT().Record(gomock.Any(), gomock.Any(), c.Until).Return(nil)
+
+	err := svc.Run(t.Context(), c)
+
+	require.NoError(t, err)
+	assert.Equal(t, "level=WARN msg=\"release host slot\"\n", buf.String())
 }

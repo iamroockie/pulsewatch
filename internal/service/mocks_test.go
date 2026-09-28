@@ -73,17 +73,17 @@ func (mr *MockCheckRepositoryMockRecorder) Record(ctx, check, until any) *gomock
 }
 
 // Release mocks base method.
-func (m *MockCheckRepository) Release(ctx context.Context, id uuid.UUID, until, now time.Time) error {
+func (m *MockCheckRepository) Release(ctx context.Context, id uuid.UUID, until, retryAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Release", ctx, id, until, now)
+	ret := m.ctrl.Call(m, "Release", ctx, id, until, retryAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Release indicates an expected call of Release.
-func (mr *MockCheckRepositoryMockRecorder) Release(ctx, id, until, now any) *gomock.Call {
+func (mr *MockCheckRepositoryMockRecorder) Release(ctx, id, until, retryAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockCheckRepository)(nil).Release), ctx, id, until, now)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockCheckRepository)(nil).Release), ctx, id, until, retryAt)
 }
 
 // MockChecker is a mock of Checker interface.
@@ -123,6 +123,59 @@ func (m *MockChecker) Check(ctx context.Context, s domain.CheckSettings) (domain
 func (mr *MockCheckerMockRecorder) Check(ctx, s any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Check", reflect.TypeOf((*MockChecker)(nil).Check), ctx, s)
+}
+
+// MockHostLimiter is a mock of HostLimiter interface.
+type MockHostLimiter struct {
+	ctrl     *gomock.Controller
+	recorder *MockHostLimiterMockRecorder
+	isgomock struct{}
+}
+
+// MockHostLimiterMockRecorder is the mock recorder for MockHostLimiter.
+type MockHostLimiterMockRecorder struct {
+	mock *MockHostLimiter
+}
+
+// NewMockHostLimiter creates a new mock instance.
+func NewMockHostLimiter(ctrl *gomock.Controller) *MockHostLimiter {
+	mock := &MockHostLimiter{ctrl: ctrl}
+	mock.recorder = &MockHostLimiterMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockHostLimiter) EXPECT() *MockHostLimiterMockRecorder {
+	return m.recorder
+}
+
+// Acquire mocks base method.
+func (m *MockHostLimiter) Acquire(ctx context.Context, c domain.Claim, now time.Time) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Acquire", ctx, c, now)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Acquire indicates an expected call of Acquire.
+func (mr *MockHostLimiterMockRecorder) Acquire(ctx, c, now any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Acquire", reflect.TypeOf((*MockHostLimiter)(nil).Acquire), ctx, c, now)
+}
+
+// Release mocks base method.
+func (m *MockHostLimiter) Release(ctx context.Context, c domain.Claim) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Release", ctx, c)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// Release indicates an expected call of Release.
+func (mr *MockHostLimiterMockRecorder) Release(ctx, c any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Release", reflect.TypeOf((*MockHostLimiter)(nil).Release), ctx, c)
 }
 
 // MockMonitorRepository is a mock of MonitorRepository interface.
