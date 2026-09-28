@@ -12,12 +12,67 @@ package rest_test
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 	uuid "uuid"
 
 	domain "github.com/iamroockie/pulsewatch/internal/domain"
 	service "github.com/iamroockie/pulsewatch/internal/service"
 	gomock "go.uber.org/mock/gomock"
 )
+
+// MockHistoryService is a mock of HistoryService interface.
+type MockHistoryService struct {
+	ctrl     *gomock.Controller
+	recorder *MockHistoryServiceMockRecorder
+	isgomock struct{}
+}
+
+// MockHistoryServiceMockRecorder is the mock recorder for MockHistoryService.
+type MockHistoryServiceMockRecorder struct {
+	mock *MockHistoryService
+}
+
+// NewMockHistoryService creates a new mock instance.
+func NewMockHistoryService(ctrl *gomock.Controller) *MockHistoryService {
+	mock := &MockHistoryService{ctrl: ctrl}
+	mock.recorder = &MockHistoryServiceMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockHistoryService) EXPECT() *MockHistoryServiceMockRecorder {
+	return m.recorder
+}
+
+// Checks mocks base method.
+func (m *MockHistoryService) Checks(ctx context.Context, monitorID uuid.UUID, before time.Time, limit int) (service.CheckPage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Checks", ctx, monitorID, before, limit)
+	ret0, _ := ret[0].(service.CheckPage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Checks indicates an expected call of Checks.
+func (mr *MockHistoryServiceMockRecorder) Checks(ctx, monitorID, before, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Checks", reflect.TypeOf((*MockHistoryService)(nil).Checks), ctx, monitorID, before, limit)
+}
+
+// Uptime mocks base method.
+func (m *MockHistoryService) Uptime(ctx context.Context, monitorID uuid.UUID) (domain.UptimeReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Uptime", ctx, monitorID)
+	ret0, _ := ret[0].(domain.UptimeReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Uptime indicates an expected call of Uptime.
+func (mr *MockHistoryServiceMockRecorder) Uptime(ctx, monitorID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Uptime", reflect.TypeOf((*MockHistoryService)(nil).Uptime), ctx, monitorID)
+}
 
 // MockMonitorService is a mock of MonitorService interface.
 type MockMonitorService struct {

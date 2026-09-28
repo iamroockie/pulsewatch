@@ -21,9 +21,12 @@ import (
 func newRouter(tb testing.TB, log *slog.Logger, checkErr error) http.Handler {
 	tb.Helper()
 
-	return rest.NewRouter(log, map[string]plinth.CheckFunc{
+	ctrl := gomock.NewController(tb)
+	probes := map[string]plinth.CheckFunc{
 		"postgres": func(context.Context) error { return checkErr },
-	}, NewMockMonitorService(gomock.NewController(tb)))
+	}
+
+	return rest.NewRouter(log, probes, NewMockMonitorService(ctrl), NewMockHistoryService(ctrl))
 }
 
 func testRouter(tb testing.TB, checkErr error) http.Handler {

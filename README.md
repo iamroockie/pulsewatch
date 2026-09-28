@@ -17,6 +17,7 @@ Go, PostgreSQL, Redis.
 PostgreSQL хранит мониторы и историю проверок и одновременно служит очередью задач.
 Воркеры забирают просроченные мониторы через `FOR UPDATE SKIP LOCKED` и берут каждый в аренду.
 Если воркер упал, его мониторы вернутся в очередь, когда истечёт аренда.
+Проверки старше 30 дней воркер удаляет раз в час.
 
 Redis хранит короткоживущее состояние для координации. Пока это семафор на каждый хост:
 все воркеры вместе ведут не больше пяти проверок одного хоста одновременно.
@@ -36,6 +37,9 @@ make run-worker
 curl -X POST localhost:8080/monitors \
   -H 'Content-Type: application/json' \
   -d '{"url":"https://example.com","interval_seconds":30,"timeout_ms":5000,"max_retries":2}'
+
+curl 'localhost:8080/monitors/<id>/checks?limit=10'
+curl 'localhost:8080/monitors/<id>/uptime'
 ```
 
 `make test` запускает unit-тесты, `make test-full` — ещё и тесты, которым нужен Docker.
@@ -48,7 +52,7 @@ curl -X POST localhost:8080/monitors \
 - [x] HTTP-проверка
 - [x] Планировщик и пул воркеров
 - [x] Лимит на хост в Redis
-- [ ] Uptime, история проверок и кеш
+- [x] Uptime и история проверок
 - [ ] Метрики Prometheus и дашборд Grafana
 - [ ] Сквозные тесты
 - [ ] Docker-образы и весь стек одной командой `docker compose up`

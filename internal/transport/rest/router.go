@@ -13,6 +13,7 @@ func NewRouter(
 	log *slog.Logger,
 	probes map[string]plinth.CheckFunc,
 	monitors MonitorService,
+	history HistoryService,
 ) http.Handler {
 	mux := http.NewServeMux()
 
@@ -25,6 +26,10 @@ func NewRouter(
 	mux.Handle("GET /monitors/{id}", plinth.RespondJSON(monitor.get))
 	mux.Handle("PATCH /monitors/{id}", plinth.RespondJSON(monitor.update))
 	mux.Handle("DELETE /monitors/{id}", plinth.RespondJSON(monitor.delete))
+
+	hist := &historyHandler{svc: history}
+	mux.Handle("GET /monitors/{id}/checks", plinth.RespondJSON(hist.checks))
+	mux.Handle("GET /monitors/{id}/uptime", plinth.RespondJSON(hist.uptime))
 
 	mw := middleware.Chain(
 		middleware.RequestID(),

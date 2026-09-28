@@ -30,12 +30,14 @@ func RunAPI(cfg config.API, log *slog.Logger) error {
 	}
 	defer db.Close()
 
-	monitors := service.NewMonitors(postgres.NewMonitors(db), now, uuid.NewV7)
+	monitorRepo := postgres.NewMonitors(db)
+	monitors := service.NewMonitors(monitorRepo, now, uuid.NewV7)
+	history := service.NewHistory(monitorRepo, postgres.NewChecks(db), now)
 	probes := map[string]plinth.CheckFunc{"postgres": db.Ping}
 
 	svr := &http.Server{
 		Addr:              cfg.HTTP.Addr(),
-		Handler:           rest.NewRouter(log, probes, monitors),
+		Handler:           rest.NewRouter(log, probes, monitors, history),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

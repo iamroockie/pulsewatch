@@ -88,6 +88,15 @@ func (s *Checks) Run(ctx context.Context, c domain.Claim) error {
 	return fmt.Errorf("record check of monitor %s: %w", id, errors.Join(err, releaseErr))
 }
 
+func (s *Checks) Purge(ctx context.Context, keep time.Duration) (int64, error) {
+	deleted, err := s.repo.DeleteBefore(ctx, s.now().Add(-keep))
+	if err != nil {
+		return deleted, fmt.Errorf("purge checks: %w", err)
+	}
+
+	return deleted, nil
+}
+
 func (s *Checks) acquireSlot(ctx context.Context, c domain.Claim) bool {
 	ctx, cancel := context.WithTimeout(ctx, slotTimeout)
 	defer cancel()

@@ -18,12 +18,23 @@ type CheckRepository interface {
 		margin time.Duration,
 		limit int,
 	) ([]domain.Claim, error)
+	DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error)
 	Record(ctx context.Context, check *domain.Check, until time.Time) error
 	Release(ctx context.Context, id uuid.UUID, until, retryAt time.Time) error
 }
 
 type Checker interface {
 	Check(ctx context.Context, s domain.CheckSettings) (domain.CheckResult, error)
+}
+
+type HistoryRepository interface {
+	List(
+		ctx context.Context,
+		monitorID uuid.UUID,
+		before time.Time,
+		limit int,
+	) ([]*domain.Check, error)
+	Uptime(ctx context.Context, monitorID uuid.UUID, now time.Time) (domain.UptimeReport, error)
 }
 
 type HostLimiter interface {

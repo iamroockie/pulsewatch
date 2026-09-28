@@ -4,12 +4,17 @@ package schedule
 
 import (
 	"context"
+	"time"
 
 	"github.com/iamroockie/pulsewatch/internal/domain"
 )
 
 type Claimer interface {
 	ClaimDue(ctx context.Context, limit int) ([]domain.Claim, error)
+}
+
+type Purger interface {
+	Purge(ctx context.Context, keep time.Duration) (int64, error)
 }
 
 type Workers interface {

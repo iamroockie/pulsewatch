@@ -4,11 +4,22 @@ package rest
 
 import (
 	"context"
+	"time"
 	"uuid"
 
 	"github.com/iamroockie/pulsewatch/internal/domain"
 	"github.com/iamroockie/pulsewatch/internal/service"
 )
+
+type HistoryService interface {
+	Checks(
+		ctx context.Context,
+		monitorID uuid.UUID,
+		before time.Time,
+		limit int,
+	) (service.CheckPage, error)
+	Uptime(ctx context.Context, monitorID uuid.UUID) (domain.UptimeReport, error)
+}
 
 type MonitorService interface {
 	Create(ctx context.Context, settings domain.CheckSettings) (*domain.Monitor, error)

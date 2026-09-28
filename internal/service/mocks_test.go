@@ -58,6 +58,21 @@ func (mr *MockCheckRepositoryMockRecorder) ClaimDue(ctx, now, retryDelay, margin
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimDue", reflect.TypeOf((*MockCheckRepository)(nil).ClaimDue), ctx, now, retryDelay, margin, limit)
 }
 
+// DeleteBefore mocks base method.
+func (m *MockCheckRepository) DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteBefore", ctx, cutoff)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// DeleteBefore indicates an expected call of DeleteBefore.
+func (mr *MockCheckRepositoryMockRecorder) DeleteBefore(ctx, cutoff any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteBefore", reflect.TypeOf((*MockCheckRepository)(nil).DeleteBefore), ctx, cutoff)
+}
+
 // Record mocks base method.
 func (m *MockCheckRepository) Record(ctx context.Context, check *domain.Check, until time.Time) error {
 	m.ctrl.T.Helper()
@@ -123,6 +138,60 @@ func (m *MockChecker) Check(ctx context.Context, s domain.CheckSettings) (domain
 func (mr *MockCheckerMockRecorder) Check(ctx, s any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Check", reflect.TypeOf((*MockChecker)(nil).Check), ctx, s)
+}
+
+// MockHistoryRepository is a mock of HistoryRepository interface.
+type MockHistoryRepository struct {
+	ctrl     *gomock.Controller
+	recorder *MockHistoryRepositoryMockRecorder
+	isgomock struct{}
+}
+
+// MockHistoryRepositoryMockRecorder is the mock recorder for MockHistoryRepository.
+type MockHistoryRepositoryMockRecorder struct {
+	mock *MockHistoryRepository
+}
+
+// NewMockHistoryRepository creates a new mock instance.
+func NewMockHistoryRepository(ctrl *gomock.Controller) *MockHistoryRepository {
+	mock := &MockHistoryRepository{ctrl: ctrl}
+	mock.recorder = &MockHistoryRepositoryMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockHistoryRepository) EXPECT() *MockHistoryRepositoryMockRecorder {
+	return m.recorder
+}
+
+// List mocks base method.
+func (m *MockHistoryRepository) List(ctx context.Context, monitorID uuid.UUID, before time.Time, limit int) ([]*domain.Check, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "List", ctx, monitorID, before, limit)
+	ret0, _ := ret[0].([]*domain.Check)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// List indicates an expected call of List.
+func (mr *MockHistoryRepositoryMockRecorder) List(ctx, monitorID, before, limit any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockHistoryRepository)(nil).List), ctx, monitorID, before, limit)
+}
+
+// Uptime mocks base method.
+func (m *MockHistoryRepository) Uptime(ctx context.Context, monitorID uuid.UUID, now time.Time) (domain.UptimeReport, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Uptime", ctx, monitorID, now)
+	ret0, _ := ret[0].(domain.UptimeReport)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Uptime indicates an expected call of Uptime.
+func (mr *MockHistoryRepositoryMockRecorder) Uptime(ctx, monitorID, now any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Uptime", reflect.TypeOf((*MockHistoryRepository)(nil).Uptime), ctx, monitorID, now)
 }
 
 // MockHostLimiter is a mock of HostLimiter interface.

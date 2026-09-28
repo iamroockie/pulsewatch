@@ -87,6 +87,46 @@ func claimedIDs(claims []domain.Claim) []uuid.UUID {
 	return ids
 }
 
+func insertCheck(t *testing.T, pool *pgxpool.Pool, c *domain.Check) {
+	t.Helper()
+
+	query := `
+		INSERT INTO checks (
+			monitor_id, checked_at, is_up, status_code, latency_ms, attempts, error
+		)
+		VALUES ($1, $2, $3, NULLIF($4, 0), $5, $6, NULLIF($7, ''))
+	`
+
+	_, err := pool.Exec(t.Context(), query, c.MonitorID, c.CheckedAt, c.Result.IsUp,
+		c.Result.StatusCode, c.Result.Latency.Milliseconds(), c.Result.Attempts, c.Result.Error)
+	require.NoError(t, err)
+}
+
+func checkAt(monitorID uuid.UUID, checkedAt time.Time, isUp bool) *domain.Check {
+	return &domain.Check{
+		MonitorID: monitorID,
+		CheckedAt: checkedAt,
+		Result: domain.CheckResult{
+			IsUp:       isUp,
+			StatusCode: 200,
+			Latency:    42 * time.Millisecond,
+			Attempts:   1,
+		},
+	}
+}
+
+func storedCheckTimes(t *testing.T, pool *pgxpool.Pool, monitorID uuid.UUID) []time.Time {
+	t.Helper()
+
+	checks := storedChecks(t, pool, monitorID)
+	times := make([]time.Time, 0, len(checks))
+	for _, c := range checks {
+		times = append(times, c.CheckedAt)
+	}
+
+	return times
+}
+
 func TestChecksClaimDue(t *testing.T) {
 	pool := newPool(t)
 	checks := postgres.NewChecks(pool)
@@ -403,4 +443,141 @@ func TestChecksReleaseMonitorNotFound(t *testing.T) {
 	err := postgres.NewChecks(pool).Release(t.Context(), uuid.NewV7(), fixedNow(), fixedNow())
 
 	assert.NoError(t, err)
+}
+
+func TestChecksList(t *testing.T) {
+	pool := newPool(t)
+	checks := postgres.NewChecks(pool)
+	stored := storeMonitor(t, pool, unchanged)
+	foreign := storeMonitor(t, pool, unchanged)
+	newest := checkAt(stored.ID, fixedNow().Add(-time.Minute), true)
+	failed := &domain.Check{
+		MonitorID: stored.ID,
+		CheckedAt: fixedNow().Add(-2 * time.Minute),
+		Result:    domain.CheckResult{Latency: 5 * time.Second, Attempts: 3, Error: "timeout"},
+	}
+	oldest := checkAt(stored.ID, fixedNow().Add(-3*time.Minute), false)
+	for _, c := range []*domain.Check{oldest, newest, failed} {
+		insertCheck(t, pool, c)
+	}
+	insertCheck(t, pool, checkAt(foreign.ID, fixedNow().Add(-90*time.Second), true))
+	tests := map[string]struct {
+		before time.Time
+		limit  int
+		want   []*domain.Check
+	}{
+		"newest first":        {limit: 10, want: []*domain.Check{newest, failed, oldest}},
+		"limited":             {limit: 2, want: []*domain.Check{newest, failed}},
+		"before is exclusive": {before: failed.CheckedAt, limit: 10, want: []*domain.Check{oldest}},
+		"before oldest":       {before: oldest.CheckedAt, limit: 10, want: []*domain.Check{}},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := checks.List(t.Context(), stored.ID, test.before, test.limit)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestChecksUptime(t *testing.T) {
+	now := fixedNow().Add(time.Hour)
+	type ageCheck struct {
+		age  time.Duration
+		isUp bool
+	}
+	tests := map[string]struct {
+		checks []ageCheck
+		want   domain.UptimeReport
+	}{
+		"no checks": {
+			checks: nil,
+			want:   domain.UptimeReport{},
+		},
+		"window boundaries": {
+			checks: []ageCheck{
+				{age: 30 * time.Minute, isUp: true},
+				{age: time.Hour - time.Microsecond, isUp: false},
+				{age: time.Hour, isUp: true},
+				{age: 24*time.Hour - time.Microsecond, isUp: false},
+				{age: 24 * time.Hour, isUp: true},
+				{age: 7*24*time.Hour - time.Microsecond, isUp: true},
+				{age: 7 * 24 * time.Hour, isUp: false},
+			},
+			want: domain.UptimeReport{
+				Hour: domain.Uptime{Checks: 2, Up: 1},
+				Day:  domain.Uptime{Checks: 4, Up: 2},
+				Week: domain.Uptime{Checks: 6, Up: 4},
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			pool := newPool(t)
+			stored := storeMonitor(t, pool, unchanged)
+			foreign := storeMonitor(t, pool, unchanged)
+			for _, c := range test.checks {
+				insertCheck(t, pool, checkAt(stored.ID, now.Add(-c.age), c.isUp))
+			}
+			insertCheck(t, pool, checkAt(foreign.ID, now.Add(-time.Minute), false))
+
+			got, err := postgres.NewChecks(pool).Uptime(t.Context(), stored.ID, now)
+
+			require.NoError(t, err)
+			assert.Equal(t, test.want, got)
+		})
+	}
+}
+
+func TestChecksDeleteBefore(t *testing.T) {
+	pool := newPool(t)
+	cutoff := fixedNow()
+	active := storeMonitor(t, pool, unchanged)
+	paused := storeMonitor(t, pool, func(m *domain.Monitor) {
+		m.IsActive = false
+	})
+	for _, m := range []*domain.Monitor{active, paused} {
+		insertCheck(t, pool, checkAt(m.ID, cutoff.Add(-time.Microsecond), true))
+		insertCheck(t, pool, checkAt(m.ID, cutoff, true))
+		insertCheck(t, pool, checkAt(m.ID, cutoff.Add(time.Minute), true))
+	}
+	want := []time.Time{cutoff, cutoff.Add(time.Minute)}
+
+	got, err := postgres.NewChecks(pool).DeleteBefore(t.Context(), cutoff)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), got)
+	assert.ElementsMatch(t, want, storedCheckTimes(t, pool, active.ID))
+	assert.ElementsMatch(t, want, storedCheckTimes(t, pool, paused.ID))
+}
+
+func TestChecksDeleteBeforeConcurrentCallsDeleteOnce(t *testing.T) {
+	const monitors = 10
+	pool := newPool(t)
+	cutoff := fixedNow()
+	for range monitors {
+		m := storeMonitor(t, pool, unchanged)
+		insertCheck(t, pool, checkAt(m.ID, cutoff.Add(-time.Minute), true))
+		insertCheck(t, pool, checkAt(m.ID, cutoff.Add(-2*time.Minute), true))
+	}
+	deleted := make([]int64, 4)
+	var wg sync.WaitGroup
+
+	for i := range deleted {
+		wg.Go(func() {
+			var err error
+			deleted[i], err = postgres.NewChecks(pool).DeleteBefore(t.Context(), cutoff)
+			assert.NoError(t, err)
+		})
+	}
+	wg.Wait()
+
+	var total int64
+	for _, n := range deleted {
+		total += n
+	}
+	assert.Equal(t, int64(2*monitors), total)
 }

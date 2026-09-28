@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -40,9 +41,15 @@ func RunWorker(cfg config.Worker, log *slog.Logger) error {
 	checks := service.NewChecks(postgres.NewChecks(db), checker, hosts, now, retryBackoff.Max, log)
 	workers := pool.NewPool(cfg.WorkerCount, checks, log)
 
+	var retention sync.WaitGroup
+	retention.Go(func() {
+		schedule.NewRetention(checks, 30*24*time.Hour, time.Hour, log).Run(runCtx)
+	})
+
 	log.Info("scheduler running", "workers", cfg.WorkerCount)
 	schedule.NewScheduler(checks, workers, time.Second, log).Run(runCtx)
 	stop()
+	retention.Wait()
 
 	log.Info("shutdown started")
 

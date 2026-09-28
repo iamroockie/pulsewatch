@@ -66,9 +66,11 @@ func storedMonitor() *domain.Monitor {
 func newMonitorRouter(t *testing.T) (http.Handler, *MockMonitorService) {
 	t.Helper()
 
-	svc := NewMockMonitorService(gomock.NewController(t))
+	ctrl := gomock.NewController(t)
+	svc := NewMockMonitorService(ctrl)
+	h := rest.NewRouter(slog.New(slog.DiscardHandler), nil, svc, NewMockHistoryService(ctrl))
 
-	return rest.NewRouter(slog.New(slog.DiscardHandler), nil, svc), svc
+	return h, svc
 }
 
 func serveJSON(

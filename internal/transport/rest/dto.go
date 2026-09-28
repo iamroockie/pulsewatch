@@ -95,3 +95,75 @@ func pageFromDomain(p service.MonitorPage) monitorPageResponse {
 func seconds(d time.Duration) int64 {
 	return int64(d / time.Second)
 }
+
+type checkResponse struct {
+	CheckedAt  time.Time `json:"checked_at"`
+	IsUp       bool      `json:"is_up"`
+	StatusCode *int      `json:"status_code"`
+	LatencyMS  int64     `json:"latency_ms"`
+	Attempts   int32     `json:"attempts"`
+	Error      *string   `json:"error"`
+}
+
+func checkFromDomain(c *domain.Check) checkResponse {
+	return checkResponse{
+		CheckedAt:  c.CheckedAt,
+		IsUp:       c.Result.IsUp,
+		StatusCode: nullIfZero(c.Result.StatusCode),
+		LatencyMS:  c.Result.Latency.Milliseconds(),
+		Attempts:   c.Result.Attempts,
+		Error:      nullIfZero(c.Result.Error),
+	}
+}
+
+type checkPageResponse struct {
+	Items      []checkResponse `json:"items"`
+	NextBefore *time.Time      `json:"next_before"`
+}
+
+func checkPageFromDomain(p service.CheckPage) checkPageResponse {
+	items := make([]checkResponse, 0, len(p.Items))
+	for _, c := range p.Items {
+		items = append(items, checkFromDomain(c))
+	}
+
+	return checkPageResponse{Items: items, NextBefore: p.NextBefore}
+}
+
+type uptimeResponse struct {
+	Checks int64    `json:"checks"`
+	Up     int64    `json:"up"`
+	Ratio  *float64 `json:"ratio"`
+}
+
+func uptimeFromDomain(u domain.Uptime) uptimeResponse {
+	resp := uptimeResponse{Checks: u.Checks, Up: u.Up, Ratio: nil}
+	if ratio, ok := u.Ratio(); ok {
+		resp.Ratio = &ratio
+	}
+
+	return resp
+}
+
+type uptimeReportResponse struct {
+	Hour uptimeResponse `json:"1h"`
+	Day  uptimeResponse `json:"24h"`
+	Week uptimeResponse `json:"7d"`
+}
+
+func uptimeReportFromDomain(r domain.UptimeReport) uptimeReportResponse {
+	return uptimeReportResponse{
+		Hour: uptimeFromDomain(r.Hour),
+		Day:  uptimeFromDomain(r.Day),
+		Week: uptimeFromDomain(r.Week),
+	}
+}
+
+func nullIfZero[T comparable](v T) *T {
+	var zero T
+	if v == zero {
+		return nil
+	}
+
+	return &v
+}

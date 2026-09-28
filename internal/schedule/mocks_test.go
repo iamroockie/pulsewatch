@@ -12,6 +12,7 @@ package schedule_test
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	domain "github.com/iamroockie/pulsewatch/internal/domain"
 	gomock "go.uber.org/mock/gomock"
@@ -54,6 +55,45 @@ func (m *MockClaimer) ClaimDue(ctx context.Context, limit int) ([]domain.Claim, 
 func (mr *MockClaimerMockRecorder) ClaimDue(ctx, limit any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimDue", reflect.TypeOf((*MockClaimer)(nil).ClaimDue), ctx, limit)
+}
+
+// MockPurger is a mock of Purger interface.
+type MockPurger struct {
+	ctrl     *gomock.Controller
+	recorder *MockPurgerMockRecorder
+	isgomock struct{}
+}
+
+// MockPurgerMockRecorder is the mock recorder for MockPurger.
+type MockPurgerMockRecorder struct {
+	mock *MockPurger
+}
+
+// NewMockPurger creates a new mock instance.
+func NewMockPurger(ctrl *gomock.Controller) *MockPurger {
+	mock := &MockPurger{ctrl: ctrl}
+	mock.recorder = &MockPurgerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockPurger) EXPECT() *MockPurgerMockRecorder {
+	return m.recorder
+}
+
+// Purge mocks base method.
+func (m *MockPurger) Purge(ctx context.Context, keep time.Duration) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Purge", ctx, keep)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Purge indicates an expected call of Purge.
+func (mr *MockPurgerMockRecorder) Purge(ctx, keep any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Purge", reflect.TypeOf((*MockPurger)(nil).Purge), ctx, keep)
 }
 
 // MockWorkers is a mock of Workers interface.

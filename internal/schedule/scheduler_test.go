@@ -56,7 +56,7 @@ func never() <-chan struct{} {
 	return make(chan struct{})
 }
 
-func runFor(t *testing.T, s *schedule.Scheduler, d time.Duration) {
+func runFor(t *testing.T, s interface{ Run(ctx context.Context) }, d time.Duration) {
 	t.Helper()
 
 	ctx, cancel := context.WithCancel(t.Context())

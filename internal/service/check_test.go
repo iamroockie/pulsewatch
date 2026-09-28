@@ -329,3 +329,25 @@ func TestChecksRunRecordsResultWhenSlotReleaseFails(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "level=WARN msg=\"release host slot\"\n", buf.String())
 }
+
+func TestChecksPurge(t *testing.T) {
+	svc, repo, _, _ := newChecks(t)
+	keep := 30 * 24 * time.Hour
+	repo.EXPECT().DeleteBefore(gomock.Any(), fixedNow().Add(-keep)).Return(int64(7), nil)
+
+	got, err := svc.Purge(t.Context(), keep)
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), got)
+}
+
+func TestChecksPurgeRepositoryError(t *testing.T) {
+	svc, repo, _, _ := newChecks(t)
+	errStorage := errors.New("storage is down")
+	repo.EXPECT().DeleteBefore(gomock.Any(), gomock.Any()).Return(int64(3), errStorage)
+
+	got, err := svc.Purge(t.Context(), time.Hour)
+
+	require.ErrorIs(t, err, errStorage)
+	assert.Equal(t, int64(3), got)
+}

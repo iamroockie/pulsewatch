@@ -2,17 +2,9 @@ package rest
 
 import (
 	"encoding/json/v2"
-	"fmt"
 	"net/http"
-	"uuid"
 
 	"github.com/iamroockie/plinth"
-)
-
-const (
-	defaultListLimit = 50
-	minListLimit     = 1
-	maxListLimit     = 100
 )
 
 type monitorHandler struct {
@@ -60,12 +52,8 @@ func (h *monitorHandler) list(r *http.Request) (*plinth.Response, error) {
 		return nil, err
 	}
 
-	if limit < minListLimit || limit > maxListLimit {
-		return nil, plinth.ValidationError(plinth.FieldViolation{
-			Field:  "limit",
-			Code:   codeOutOfRange,
-			Params: rangeParams(minListLimit, maxListLimit),
-		})
+	if err := validateLimit(limit); err != nil {
+		return nil, err
 	}
 
 	page, err := h.svc.List(r.Context(), after, int(limit))
@@ -110,20 +98,4 @@ func (h *monitorHandler) delete(r *http.Request) (*plinth.Response, error) {
 
 func parseRequest[T any](r *http.Request) (T, error) {
 	return plinth.ParseRequestJSON[T](r, plinth.WithJSONOptions(json.RejectUnknownMembers(true)))
-}
-
-func queryUUID(r *http.Request, name string) (uuid.UUID, error) {
-	value := r.URL.Query().Get(name)
-	if value == "" {
-		return uuid.Nil(), nil
-	}
-
-	id, err := uuid.Parse(value)
-	if err != nil {
-		msg := fmt.Sprintf("invalid query parameter %q", name)
-
-		return uuid.Nil(), plinth.BadRequestError(msg, err)
-	}
-
-	return id, nil
 }
