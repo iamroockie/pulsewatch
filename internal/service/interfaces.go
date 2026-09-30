@@ -18,6 +18,7 @@ type CheckRepository interface {
 		margin time.Duration,
 		limit int,
 	) ([]domain.Claim, error)
+	CountDue(ctx context.Context, now time.Time) (int64, error)
 	DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error)
 	Record(ctx context.Context, check *domain.Check, until time.Time) error
 	Release(ctx context.Context, id uuid.UUID, until, retryAt time.Time) error

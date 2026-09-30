@@ -3,13 +3,13 @@ package rest_test
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/iamroockie/plinth"
 	"github.com/iamroockie/plinth/plinthtest"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
@@ -43,7 +43,8 @@ func newHistoryRouter(t *testing.T) (http.Handler, *MockHistoryService) {
 
 	ctrl := gomock.NewController(t)
 	svc := NewMockHistoryService(ctrl)
-	h := rest.NewRouter(slog.New(slog.DiscardHandler), nil, NewMockMonitorService(ctrl), svc)
+	monitors := NewMockMonitorService(ctrl)
+	h := rest.NewRouter(discardLog(), prometheus.NewRegistry(), nil, monitors, svc)
 
 	return h, svc
 }

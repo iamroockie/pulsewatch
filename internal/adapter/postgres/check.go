@@ -46,7 +46,7 @@ func (r *Checks) ClaimDue(
 			next_check_at = @now + interval_seconds * INTERVAL '1 second'
 		FROM due
 		WHERE id = due.due_id
-		RETURNING ` + monitorColumns + `, claimed_until
+		RETURNING ` + monitorColumns + `, claimed_until, old.next_check_at AS due_at
 	`
 
 	rows, err := r.pool.Query(ctx, query, pgx.NamedArgs{
@@ -65,6 +65,23 @@ func (r *Checks) ClaimDue(
 	}
 
 	return claims, nil
+}
+
+func (r *Checks) CountDue(ctx context.Context, now time.Time) (int64, error) {
+	query := `
+		SELECT count(*)
+		FROM monitors
+		WHERE is_active
+			AND next_check_at <= @now
+			AND (claimed_until IS NULL OR claimed_until <= @now)
+	`
+
+	var due int64
+	if err := r.pool.QueryRow(ctx, query, pgx.NamedArgs{"now": now}).Scan(&due); err != nil {
+		return 0, fmt.Errorf("count due monitors: %w", err)
+	}
+
+	return due, nil
 }
 
 func (r *Checks) Record(ctx context.Context, check *domain.Check, until time.Time) error {
@@ -247,6 +264,7 @@ type claimRow struct {
 	monitorRow
 
 	ClaimedUntil time.Time `db:"claimed_until"`
+	DueAt        time.Time `db:"due_at"`
 }
 
 func scanClaim(row pgx.CollectableRow) (domain.Claim, error) {
@@ -255,7 +273,7 @@ func scanClaim(row pgx.CollectableRow) (domain.Claim, error) {
 		return domain.Claim{}, err
 	}
 
-	return domain.Claim{Monitor: r.toDomain(), Until: r.ClaimedUntil}, nil
+	return domain.Claim{Monitor: r.toDomain(), DueAt: r.DueAt, Until: r.ClaimedUntil}, nil
 }
 
 func nullIfZero[T comparable](v T) *T {

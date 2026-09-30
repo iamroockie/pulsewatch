@@ -80,6 +80,10 @@ linters:
               desc: service does not know how it is called
             - pkg: github.com/iamroockie/pulsewatch/internal/pool
               desc: service does not know how it is called
+            - pkg: github.com/iamroockie/pulsewatch/internal/observability
+              desc: metrics wrap service ports from outside
+            - pkg: github.com/prometheus
+              desc: metrics wrap service ports from outside
         adapter:
           files: ["**/internal/adapter/**"]
           deny:
@@ -107,6 +111,23 @@ linters:
               desc: API and background pipeline meet only in service
             - pkg: github.com/iamroockie/pulsewatch/internal/adapter
               desc: background pipeline goes through service
+            - pkg: github.com/iamroockie/pulsewatch/internal/observability
+              desc: metrics wrap background ports from outside
+            - pkg: github.com/prometheus
+              desc: metrics wrap background ports from outside
+        observability:
+          files: ["**/internal/observability/**"]
+          deny:
+            - pkg: github.com/iamroockie/pulsewatch/internal/service
+              desc: wrappers declare the ports they wrap
+            - pkg: github.com/iamroockie/pulsewatch/internal/adapter
+              desc: wrappers declare the ports they wrap
+            - pkg: github.com/iamroockie/pulsewatch/internal/transport
+              desc: wrappers declare the ports they wrap
+            - pkg: github.com/iamroockie/pulsewatch/internal/schedule
+              desc: wrappers declare the ports they wrap
+            - pkg: github.com/iamroockie/pulsewatch/internal/pool
+              desc: wrappers declare the ports they wrap
     embeddedstructfieldcheck:
       forbid-mutex: true
     gocognit:

@@ -7,10 +7,13 @@ import (
 
 	"github.com/iamroockie/plinth"
 	"github.com/iamroockie/plinth/middleware"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func NewRouter(
 	log *slog.Logger,
+	reg *prometheus.Registry,
 	probes map[string]plinth.CheckFunc,
 	monitors MonitorService,
 	history HistoryService,
@@ -19,6 +22,7 @@ func NewRouter(
 
 	mux.Handle("GET /healthz", plinth.Healthz())
 	mux.Handle("GET /readyz", plinth.Readyz(2*time.Second, probes))
+	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 
 	monitor := &monitorHandler{svc: monitors}
 	mux.Handle("POST /monitors", plinth.RespondJSON(monitor.create))
@@ -33,7 +37,8 @@ func NewRouter(
 
 	mw := middleware.Chain(
 		middleware.RequestID(),
-		middleware.RequestLog(log, "/healthz", "/readyz"),
+		middleware.RequestLog(log, "/healthz", "/readyz", "/metrics"),
+		instrument(mux, reg),
 		middleware.ErrorLog(log),
 		middleware.Recover(),
 	)

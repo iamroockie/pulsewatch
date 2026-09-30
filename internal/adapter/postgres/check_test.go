@@ -78,6 +78,49 @@ func storedChecks(t *testing.T, pool *pgxpool.Pool, monitorID uuid.UUID) []store
 	return checks
 }
 
+type dueCase struct {
+	modify       func(*domain.Monitor)
+	claimedUntil *time.Time
+	want         int
+}
+
+func dueCases(now time.Time) map[string]dueCase {
+	return map[string]dueCase{
+		"overdue": {
+			modify: unchanged,
+			want:   1,
+		},
+		"due right now": {
+			modify: func(m *domain.Monitor) {
+				m.NextCheckAt = now
+			},
+			want: 1,
+		},
+		"not due yet": {
+			modify: func(m *domain.Monitor) {
+				m.NextCheckAt = now.Add(time.Microsecond)
+			},
+			want: 0,
+		},
+		"paused": {
+			modify: func(m *domain.Monitor) {
+				m.IsActive = false
+			},
+			want: 0,
+		},
+		"claimed by another checker": {
+			modify:       unchanged,
+			claimedUntil: new(now.Add(time.Microsecond)),
+			want:         0,
+		},
+		"claim expired": {
+			modify:       unchanged,
+			claimedUntil: new(now),
+			want:         1,
+		},
+	}
+}
+
 func claimedIDs(claims []domain.Claim) []uuid.UUID {
 	ids := make([]uuid.UUID, 0, len(claims))
 	for _, c := range claims {
@@ -135,7 +178,7 @@ func TestChecksClaimDue(t *testing.T) {
 	monitor := *stored
 	monitor.NextCheckAt = now.Add(stored.Settings.Interval)
 	until := now.Add(35 * time.Second)
-	want := []domain.Claim{{Monitor: &monitor, Until: until}}
+	want := []domain.Claim{{Monitor: &monitor, DueAt: stored.NextCheckAt, Until: until}}
 
 	got, err := checks.ClaimDue(t.Context(), now, retryDelay, leaseMargin, 10)
 
@@ -188,46 +231,8 @@ func TestChecksClaimDueLeaseFollowsSettings(t *testing.T) {
 
 func TestChecksClaimDueSelectsDueMonitors(t *testing.T) {
 	now := fixedNow().Add(time.Hour)
-	tests := map[string]struct {
-		modify       func(*domain.Monitor)
-		claimedUntil *time.Time
-		want         int
-	}{
-		"overdue": {
-			modify: unchanged,
-			want:   1,
-		},
-		"due right now": {
-			modify: func(m *domain.Monitor) {
-				m.NextCheckAt = now
-			},
-			want: 1,
-		},
-		"not due yet": {
-			modify: func(m *domain.Monitor) {
-				m.NextCheckAt = now.Add(time.Microsecond)
-			},
-			want: 0,
-		},
-		"paused": {
-			modify: func(m *domain.Monitor) {
-				m.IsActive = false
-			},
-			want: 0,
-		},
-		"claimed by another checker": {
-			modify:       unchanged,
-			claimedUntil: new(now.Add(time.Microsecond)),
-			want:         0,
-		},
-		"claim expired": {
-			modify:       unchanged,
-			claimedUntil: new(now),
-			want:         1,
-		},
-	}
 
-	for name, test := range tests {
+	for name, test := range dueCases(now) {
 		t.Run(name, func(t *testing.T) {
 			pool := newPool(t)
 			checks := postgres.NewChecks(pool)
@@ -284,6 +289,23 @@ func TestChecksClaimDueConcurrentClaimsDoNotOverlap(t *testing.T) {
 	wg.Wait()
 
 	assert.ElementsMatch(t, want, claimedIDs(slices.Concat(claimed...)))
+}
+
+func TestChecksCountDue(t *testing.T) {
+	now := fixedNow().Add(time.Hour)
+
+	for name, test := range dueCases(now) {
+		t.Run(name, func(t *testing.T) {
+			pool := newPool(t)
+			stored := storeMonitor(t, pool, test.modify)
+			setClaimedUntil(t, pool, stored.ID, test.claimedUntil)
+
+			got, err := postgres.NewChecks(pool).CountDue(t.Context(), now)
+
+			require.NoError(t, err)
+			assert.Equal(t, int64(test.want), got)
+		})
+	}
 }
 
 func TestChecksRecord(t *testing.T) {

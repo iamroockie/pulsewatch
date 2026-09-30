@@ -37,6 +37,8 @@ func apiEnv() map[string]string {
 func workerEnv() map[string]string {
 	env := baseEnv()
 	env["WORKER_COUNT"] = "8"
+	env["METRICS_HOST"] = "0.0.0.0"
+	env["METRICS_PORT"] = "9101"
 	env["REDIS_HOST"] = "cache"
 	env["REDIS_PORT"] = "6379"
 	env["REDIS_PASS"] = "hidden"
@@ -99,6 +101,7 @@ func TestLoadWorker(t *testing.T) {
 	want := config.Worker{
 		Base:        wantBase(),
 		WorkerCount: 8,
+		Metrics:     config.HTTPConfig{Host: "0.0.0.0", Port: 9101},
 		Redis:       config.RedisConfig{Host: "cache", Port: 6379, Password: "hidden"},
 	}
 
@@ -171,6 +174,11 @@ func TestLoadRejectsMalformedValue(t *testing.T) {
 			env:     with(workerEnv(), "WORKER_COUNT", "many"),
 			load:    loadErr[config.Worker],
 			wantErr: []string{"WorkerCount", `"many"`},
+		},
+		"metrics port is not a number": {
+			env:     with(workerEnv(), "METRICS_PORT", "metrics"),
+			load:    loadErr[config.Worker],
+			wantErr: []string{"Port", `"metrics"`},
 		},
 		"redis port exceeds uint16": {
 			env:     with(workerEnv(), "REDIS_PORT", "70000"),

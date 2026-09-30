@@ -30,7 +30,8 @@ type Worker struct {
 
 	WorkerCount uint `env:"WORKER_COUNT,notEmpty"`
 
-	Redis RedisConfig `envPrefix:"REDIS_"`
+	Metrics HTTPConfig  `envPrefix:"METRICS_"`
+	Redis   RedisConfig `envPrefix:"REDIS_"`
 }
 
 type HTTPConfig struct {

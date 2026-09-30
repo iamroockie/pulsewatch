@@ -115,6 +115,27 @@ func TestChecksClaimDueRepositoryError(t *testing.T) {
 	assert.Nil(t, got)
 }
 
+func TestChecksBacklog(t *testing.T) {
+	svc, repo, _, _ := newChecks(t)
+	repo.EXPECT().CountDue(gomock.Any(), fixedNow()).Return(int64(7), nil)
+
+	got, err := svc.Backlog(t.Context())
+
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), got)
+}
+
+func TestChecksBacklogRepositoryError(t *testing.T) {
+	svc, repo, _, _ := newChecks(t)
+	errStorage := errors.New("storage is down")
+	repo.EXPECT().CountDue(gomock.Any(), gomock.Any()).Return(int64(0), errStorage)
+
+	got, err := svc.Backlog(t.Context())
+
+	require.ErrorIs(t, err, errStorage)
+	assert.Zero(t, got)
+}
+
 func TestChecksRun(t *testing.T) {
 	tests := map[string]struct {
 		recordErr error

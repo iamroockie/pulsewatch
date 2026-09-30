@@ -58,6 +58,21 @@ func (mr *MockCheckRepositoryMockRecorder) ClaimDue(ctx, now, retryDelay, margin
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ClaimDue", reflect.TypeOf((*MockCheckRepository)(nil).ClaimDue), ctx, now, retryDelay, margin, limit)
 }
 
+// CountDue mocks base method.
+func (m *MockCheckRepository) CountDue(ctx context.Context, now time.Time) (int64, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CountDue", ctx, now)
+	ret0, _ := ret[0].(int64)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// CountDue indicates an expected call of CountDue.
+func (mr *MockCheckRepositoryMockRecorder) CountDue(ctx, now any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CountDue", reflect.TypeOf((*MockCheckRepository)(nil).CountDue), ctx, now)
+}
+
 // DeleteBefore mocks base method.
 func (m *MockCheckRepository) DeleteBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	m.ctrl.T.Helper()

@@ -16,6 +16,7 @@ import (
 
 	"github.com/iamroockie/pulsewatch/internal/adapter/postgres"
 	"github.com/iamroockie/pulsewatch/internal/config"
+	"github.com/iamroockie/pulsewatch/internal/observability"
 	"github.com/iamroockie/pulsewatch/internal/service"
 	"github.com/iamroockie/pulsewatch/internal/transport/rest"
 )
@@ -34,10 +35,11 @@ func RunAPI(cfg config.API, log *slog.Logger) error {
 	monitors := service.NewMonitors(monitorRepo, now, uuid.NewV7)
 	history := service.NewHistory(monitorRepo, postgres.NewChecks(db), now)
 	probes := map[string]plinth.CheckFunc{"postgres": db.Ping}
+	reg := observability.NewRegistry()
 
 	svr := &http.Server{
 		Addr:              cfg.HTTP.Addr(),
-		Handler:           rest.NewRouter(log, probes, monitors, history),
+		Handler:           rest.NewRouter(log, reg, probes, monitors, history),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

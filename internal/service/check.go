@@ -53,6 +53,15 @@ func (s *Checks) ClaimDue(ctx context.Context, limit int) ([]domain.Claim, error
 	return claims, nil
 }
 
+func (s *Checks) Backlog(ctx context.Context) (int64, error) {
+	due, err := s.repo.CountDue(ctx, s.now())
+	if err != nil {
+		return 0, fmt.Errorf("count due monitors: %w", err)
+	}
+
+	return due, nil
+}
+
 func (s *Checks) Run(ctx context.Context, c domain.Claim) error {
 	id := c.Monitor.ID
 

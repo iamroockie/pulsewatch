@@ -14,6 +14,7 @@ import (
 	"github.com/iamroockie/pulsewatch/internal/adapter/postgres"
 	"github.com/iamroockie/pulsewatch/internal/adapter/redis"
 	"github.com/iamroockie/pulsewatch/internal/config"
+	"github.com/iamroockie/pulsewatch/internal/observability"
 	"github.com/iamroockie/pulsewatch/internal/pool"
 	"github.com/iamroockie/pulsewatch/internal/schedule"
 	"github.com/iamroockie/pulsewatch/internal/service"
@@ -35,11 +36,19 @@ func RunWorker(cfg config.Worker, log *slog.Logger) error {
 	}
 	defer rdb.Close()
 
+	reg := observability.NewRegistry()
 	retryBackoff := httpcheck.Backoff{Base: 500 * time.Millisecond, Max: 5 * time.Second}
-	checker := httpcheck.NewChecker(retryBackoff)
-	hosts := redis.NewHostLimiter(rdb, 5)
+	checker := observability.InstrumentChecker(httpcheck.NewChecker(retryBackoff), reg)
+	hosts := observability.InstrumentHostLimiter(redis.NewHostLimiter(rdb, 5), reg)
 	checks := service.NewChecks(postgres.NewChecks(db), checker, hosts, now, retryBackoff.Max, log)
-	workers := pool.NewPool(cfg.WorkerCount, checks, log)
+	runner := observability.InstrumentRunner(checks, cfg.WorkerCount, reg)
+	workers := pool.NewPool(cfg.WorkerCount, runner, log)
+	reg.MustRegister(observability.NewQueueCollector(checks))
+
+	metrics, err := serveMetrics(runCtx, cfg.Metrics.Addr(), reg, log)
+	if err != nil {
+		return err
+	}
 
 	var retention sync.WaitGroup
 	retention.Go(func() {
@@ -58,6 +67,10 @@ func RunWorker(cfg config.Worker, log *slog.Logger) error {
 
 	if err := workers.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("drain workers: %w", err)
+	}
+
+	if err := metrics.Shutdown(shutdownCtx); err != nil {
+		return fmt.Errorf("shutdown metrics server: %w", err)
 	}
 
 	log.Info("shutdown completed")
