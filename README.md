@@ -5,7 +5,7 @@
 
 ## Стек
 
-Go, PostgreSQL, Redis, Prometheus, Grafana.
+Go, PostgreSQL, Redis, Prometheus, Grafana, Docker Compose.
 
 ## Как устроено
 
@@ -28,15 +28,19 @@ Redis хранит короткоживущее состояние для коо
 сколько мониторов ждёт в очереди и хватает ли воркеров. Метрики описывают систему, а не мониторы:
 uptime отдельного монитора отдаёт API.
 
-## Локальный запуск
+## Запуск
 
 ```sh
 make prepare
 make docker-up
-make migrate-up
-make run-api
-make run-worker
 ```
+
+`make prepare` создаёт `.env` из `.env.example`. `make docker-up` собирает образы, применяет
+миграции и поднимает весь стек: PostgreSQL, Redis, API, воркер, Prometheus и Grafana.
+
+- API: http://localhost:8080
+- дашборд Grafana: http://localhost:3000/d/pulsewatch (без логина, для правки — `admin`/`admin`)
+- Prometheus: http://localhost:9090
 
 ```sh
 curl -X POST localhost:8080/monitors \
@@ -47,20 +51,42 @@ curl 'localhost:8080/monitors/<id>/checks?limit=10'
 curl 'localhost:8080/monitors/<id>/uptime'
 ```
 
-Дашборд Grafana: http://localhost:3000/d/pulsewatch (без логина, для правки — `admin`/`admin`).
-Prometheus: http://localhost:9090.
+Воркеров можно запустить несколько. Проверки они не дублируют, а лимит на хост у них общий:
+
+```sh
+docker compose up -d --scale worker=3
+```
+
+`make docker-down` останавливает стек и удаляет его данные.
+
+## API
+
+| Запрос                        | Что делает                                                    |
+| ----------------------------- | ------------------------------------------------------------- |
+| `POST /monitors`              | создаёт монитор                                               |
+| `GET /monitors`               | список мониторов, параметры `limit` и `after`                 |
+| `GET /monitors/{id}`          | один монитор                                                  |
+| `PATCH /monitors/{id}`        | меняет настройки; `is_active` ставит на паузу и снимает с неё |
+| `DELETE /monitors/{id}`       | удаляет монитор вместе с историей                             |
+| `GET /monitors/{id}/checks`   | история проверок, новые первыми; параметры `limit` и `before` |
+| `GET /monitors/{id}/uptime`   | доля успешных проверок за час, сутки и неделю                 |
+| `GET /healthz`, `GET /readyz` | пробы                                                         |
+| `GET /metrics`                | метрики Prometheus                                            |
+
+Интервал — от 10 секунд до суток, таймаут — от 100 мс до минуты и меньше интервала,
+повторов — до пяти.
+
+## Разработка
+
+```sh
+make docker-deps
+make migrate-up
+make run-api
+make run-worker
+```
+
+Так в Docker работают только PostgreSQL и Redis, а API и воркер запускаются из исходников.
+Prometheus и Grafana собирают метрики только с контейнеров, поэтому в этом режиме их нет.
 
 `make test` запускает unit-тесты, `make test-full` — ещё и тесты, которым нужен Docker.
-
-## Статус
-
-- [x] HTTP-сервер, конфиг, graceful shutdown
-- [x] PostgreSQL и миграции
-- [x] CRUD мониторов
-- [x] HTTP-проверка
-- [x] Планировщик и пул воркеров
-- [x] Лимит на хост в Redis
-- [x] Uptime и история проверок
-- [x] Метрики Prometheus и дашборд Grafana
-- [ ] Сквозные тесты
-- [ ] Docker-образы и весь стек одной командой `docker compose up`
+`make lint` запускает линтер.

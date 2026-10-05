@@ -10,7 +10,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${PG_USER}", "-d", "${PG_NAME}"]
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "${PG_USER}", "-d", "${PG_NAME}"]
       interval: 5m
       timeout: 5s
       retries: 3
@@ -32,12 +32,72 @@ services:
       start_period: 5s
       start_interval: 200ms
 
+  migrate:
+    build:
+      context: .
+      target: migrate
+    environment:
+      GOOSE_DBSTRING: >-
+        user=${PG_USER} password=${PG_PASS} host=postgres port=5432
+        dbname=${PG_NAME} sslmode=${PG_SSL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      target: api
+    env_file: .env
+    environment:
+      HTTP_HOST: 0.0.0.0
+      HTTP_PORT: 8080
+      PG_HOST: postgres
+      PG_PORT: 5432
+    ports:
+      - 127.0.0.1:${HTTP_PORT}:8080
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:8080/readyz"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+      start_interval: 200ms
+
+  worker:
+    build:
+      context: .
+      target: worker
+    env_file: .env
+    environment:
+      METRICS_HOST: 0.0.0.0
+      METRICS_PORT: 9101
+      PG_HOST: postgres
+      PG_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:9101/metrics"]
+      interval: 5m
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+      start_interval: 200ms
+
   prometheus:
     image: prom/prometheus:v3.15.0
-    network_mode: host
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --web.listen-address=127.0.0.1:9090
+    ports:
+      - 127.0.0.1:9090:9090
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -51,10 +111,10 @@ services:
 
   grafana:
     image: grafana/grafana:13.2.3
-    network_mode: host
     environment:
-      GF_SERVER_HTTP_ADDR: 127.0.0.1
       GF_AUTH_ANONYMOUS_ENABLED: "true"
+    ports:
+      - 127.0.0.1:3000:3000
     volumes:
       - ./deploy/grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./deploy/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro

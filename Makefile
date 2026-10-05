@@ -82,6 +82,10 @@ migrate-validate: $(GOOSE)
 docker-up:
 	@docker compose up -d --build --wait
 
+.PHONY: docker-deps
+docker-deps:
+	@docker compose up -d --wait postgres redis
+
 .PHONY: docker-down
 docker-down:
 	@docker compose down -v
