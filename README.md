@@ -1,5 +1,7 @@
 # Pulsewatch
 
+[![CI](https://github.com/iamroockie/pulsewatch/actions/workflows/ci.yml/badge.svg)](https://github.com/iamroockie/pulsewatch/actions/workflows/ci.yml)
+
 Небольшой сервис мониторинга доступности сайтов на Go. Добавляете URL и задаёте интервал,
 а Pulsewatch регулярно его проверяет и записывает статус, задержку и ошибки.
 
